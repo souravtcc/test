@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: fwc26-django-api
+    env: python
+    buildCommand: ./build.sh
+    startCommand: cd backend && gunicorn config.wsgi:application
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.13
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com,127.0.0.1,localhost"
+      - key: CHAIN_ID
+        value: "11155111"
+      - key: CONFIRMATION_BLOCKS
+        value: "1"
