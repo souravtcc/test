@@ -1,9 +1,13 @@
 node_modules/
 frontend/node_modules/
+.tools/
+node-portable.zip
+.env
 backend/.venv/
 backend/db.sqlite3
 backend/staticfiles/
 backend/.env
+frontend/.env
 *.log
 __pycache__/
 *.pyc
