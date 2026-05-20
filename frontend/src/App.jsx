@@ -116,6 +116,20 @@ function detectWallet(provider) {
   return "Injected Wallet";
 }
 
+function currentDappUrl() {
+  if (typeof window === "undefined") return "";
+  return window.location.href;
+}
+
+function walletOpenLinks() {
+  const url = currentDappUrl();
+  const withoutProtocol = url.replace(/^https?:\/\//, "");
+  return {
+    metamask: `https://metamask.app.link/dapp/${withoutProtocol}`,
+    trust: `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(url)}`,
+  };
+}
+
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -151,6 +165,8 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [block, setBlock] = useState(22041187);
   const [myBets, setMyBets] = useState([]);
+  const [walletLinksOpen, setWalletLinksOpen] = useState(false);
+  const [preferredMobileWallet, setPreferredMobileWallet] = useState("metamask");
 
   const ethereum = typeof window !== "undefined" ? window.ethereum : null;
   const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
@@ -189,6 +205,17 @@ export default function App() {
     window.setTimeout(() => setToast(""), 3500);
   }
 
+  function showMobileWalletLinks(preferredWallet) {
+    setPreferredMobileWallet(preferredWallet);
+    setWalletLinksOpen(true);
+    setMessage("Open this site inside MetaMask or Trust Wallet, then tap connect again.");
+  }
+
+  function openWalletApp(wallet) {
+    const links = walletOpenLinks();
+    window.location.href = links[wallet];
+  }
+
   async function connectInjectedWallet(preferredWallet) {
     const provider = preferredWallet === "trust" && ethereum?.providers
       ? ethereum.providers.find((item) => item.isTrust) || ethereum
@@ -197,7 +224,7 @@ export default function App() {
       : ethereum;
 
     if (!provider) {
-      setMessage(`${preferredWallet === "trust" ? "Trust Wallet" : "MetaMask"} provider is not available in this browser. Use MetaMask extension, Trust Wallet mobile browser, or the QR button.`);
+      showMobileWalletLinks(preferredWallet);
       return null;
     }
 
@@ -208,6 +235,7 @@ export default function App() {
     setActiveProvider(provider);
     setWalletAddress(accounts[0]);
     setWalletName(connectedWalletName);
+    setWalletLinksOpen(false);
     setMessage("Wallet connected.");
     saveWalletConnection(accounts[0], connectedWalletName, Number(network.chainId));
     return { address: accounts[0], provider };
@@ -271,6 +299,7 @@ export default function App() {
       let providerForTx = activeProvider || ethereum;
       let activeAddress = walletAddress;
       if (!activeAddress || !providerForTx) {
+        setWalletLinksOpen(true);
         const connected = await connectWalletConnect();
         activeAddress = connected?.address || "";
         providerForTx = connected?.provider || providerForTx;
@@ -338,6 +367,25 @@ export default function App() {
           </div>
         </div>
       </nav>
+
+      {walletLinksOpen && (
+        <div className="wallet-fallback">
+          <div>
+            <div className="wallet-fallback-title">
+              {preferredMobileWallet === "trust" ? "OPEN TRUST WALLET" : "OPEN METAMASK"}
+            </div>
+            <div className="wallet-fallback-copy">
+              Mobile browser has no wallet provider. Open this same website inside your wallet app, or use WalletConnect QR.
+            </div>
+          </div>
+          <div className="wallet-fallback-actions">
+            <button className="wallet-link-btn" onClick={() => openWalletApp("metamask")}>OPEN METAMASK</button>
+            <button className="wallet-link-btn trust" onClick={() => openWalletApp("trust")}>OPEN TRUST</button>
+            <button className="wallet-link-btn qr" onClick={connectWalletConnect}>WALLETCONNECT QR</button>
+            <button className="wallet-link-close" onClick={() => setWalletLinksOpen(false)}>CLOSE</button>
+          </div>
+        </div>
+      )}
 
       <HeroStats />
 

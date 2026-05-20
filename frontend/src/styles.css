@@ -152,6 +152,62 @@ nav {
 .wallet-dot { width: 6px; height: 6px; border-radius: 50%; background: #00cc44; animation: blink 2s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
+.wallet-fallback {
+  max-width: 1400px;
+  margin: 12px auto 0;
+  padding: 14px 20px;
+  background: var(--card);
+  border: 1px solid var(--yellow);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 0 28px rgba(232,255,0,0.08);
+}
+.wallet-fallback-title {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.08em;
+  color: var(--yellow);
+}
+.wallet-fallback-copy {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.7;
+  margin-top: 4px;
+}
+.wallet-fallback-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.wallet-link-btn,
+.wallet-link-close {
+  border: 1px solid var(--border);
+  background: var(--yellow);
+  color: #000;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 9px 12px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.wallet-link-btn.trust {
+  background: #2f80ed;
+  color: #fff;
+}
+.wallet-link-btn.qr {
+  background: var(--green);
+  color: #000;
+}
+.wallet-link-close {
+  background: transparent;
+  color: var(--muted);
+}
+
 .hero-wrap { max-width: 1400px; margin: 0 auto; padding: 20px 20px 0; }
 .hero-stats {
   display: grid;
@@ -462,6 +518,22 @@ nav {
   .nav-tabs { display: none; }
   .nav-right { justify-content: stretch; }
   .wallet-btn { flex: 1; justify-content: center; }
+  .wallet-fallback {
+    margin: 10px 12px 0;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px;
+  }
+  .wallet-fallback-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
+  }
+  .wallet-link-btn,
+  .wallet-link-close {
+    width: 100%;
+    min-height: 40px;
+  }
   .section-header { align-items: flex-start; flex-direction: column; }
   .team-flag { font-size: 28px; }
   .team-code { font-size: 22px; }
