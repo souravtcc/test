@@ -471,6 +471,31 @@ nav {
 .modal-selection-val { background: var(--bg3); border: 1px solid var(--border); padding: 12px 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .modal-selection-val .pick { font-size: 11px; }
 .modal-selection-val .odds { font-family: "Bebas Neue", sans-serif; font-size: 26px; color: var(--yellow); }
+.modal-bet-list { display: grid; gap: 8px; margin-bottom: 18px; }
+.modal-bet-row {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 96px;
+  align-items: center;
+  gap: 10px;
+}
+.modal-bet-match { color: var(--muted); font-size: 8px; margin-bottom: 4px; }
+.modal-bet-pick { font-size: 10px; line-height: 1.4; }
+.modal-bet-right { font-family: "Space Mono", monospace; font-size: 9px; color: var(--yellow); text-align: right; display: grid; gap: 3px; }
+.modal-bet-input {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  padding: 8px;
+  outline: none;
+}
+.modal-bet-input:focus { border-color: var(--yellow); }
 .modal-input-wrap { display: flex; align-items: center; border: 1px solid var(--border); background: var(--bg); margin-bottom: 18px; transition: border-color 0.15s; }
 .modal-input-wrap:focus-within { border-color: var(--yellow); }
 .modal-input-prefix { padding: 0 12px; font-size: 10px; color: var(--muted); border-right: 1px solid var(--border); height: 48px; display: flex; align-items: center; }
@@ -539,5 +564,7 @@ nav {
   .team-code { font-size: 22px; }
   .vs-section { width: 50px; }
   .odds-row { grid-template-columns: 1fr; }
+  .modal-bet-row { grid-template-columns: 1fr; }
+  .modal-bet-right { text-align: left; }
   .hero-stats { grid-template-columns: 1fr; }
 }

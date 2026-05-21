@@ -67,7 +67,15 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 
+def normalize_database_url(database_url):
+    database_url = (database_url or "").strip().strip('"').strip("'")
+    if database_url.startswith("DATABASE_URL="):
+        database_url = database_url.split("=", 1)[1].strip().strip('"').strip("'")
+    return database_url
+
+
 def postgres_database_from_url(database_url):
+    database_url = normalize_database_url(database_url)
     parsed = urlparse(database_url)
     query = parse_qs(parsed.query)
     options = {}
@@ -84,7 +92,7 @@ def postgres_database_from_url(database_url):
     }
 
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DATABASE_URL = normalize_database_url(os.environ.get("DATABASE_URL", ""))
 
 if DATABASE_URL:
     DATABASES = {"default": postgres_database_from_url(DATABASE_URL)}

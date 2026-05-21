@@ -8,9 +8,9 @@ class Command(BaseCommand):
     help = "Create or reset the default Django admin user for the active database."
 
     def add_arguments(self, parser):
-        parser.add_argument("--username", default=os.environ.get("DJANGO_ADMIN_USERNAME", "demo"))
-        parser.add_argument("--password", default=os.environ.get("DJANGO_ADMIN_PASSWORD", "DEMO@12"))
-        parser.add_argument("--email", default=os.environ.get("DJANGO_ADMIN_EMAIL", "demo@example.com"))
+        parser.add_argument("--username", default=os.environ.get("DJANGO_ADMIN_USERNAME", "admin"))
+        parser.add_argument("--password", default=os.environ.get("DJANGO_ADMIN_PASSWORD", "Admin@12345"))
+        parser.add_argument("--email", default=os.environ.get("DJANGO_ADMIN_EMAIL", "admin@example.com"))
 
     def handle(self, *args, **options):
         username = options["username"]

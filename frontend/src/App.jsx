@@ -174,9 +174,14 @@ export default function App() {
     () => bets.reduce((sum, bet) => sum + (Number(bet.stake) || 0) * bet.odds, 0),
     [bets],
   );
-  const modalBet = bets[0];
-  const modalAmount = modalBet?.stake || "";
-  const modalPayout = ((Number(modalAmount) || 0) * (modalBet?.odds || 0)).toFixed(4);
+  const validBets = useMemo(
+    () => bets.map((bet) => ({ ...bet, amountEth: String(bet.stake || "").trim() })),
+    [bets],
+  );
+  const totalStake = useMemo(
+    () => validBets.reduce((sum, bet) => sum + (Number(bet.amountEth) || 0), 0),
+    [validBets],
+  );
 
   useEffect(() => {
     api("/payments/config/").then(setConfig).catch((error) => setMessage(error.message));
@@ -289,12 +294,11 @@ export default function App() {
 
   async function payNow() {
     try {
-      const bet = bets[0];
-      if (!bet) return;
-      const amountEth = bet.stake || modalAmount;
-      if (Number(amountEth) <= 0) throw new Error("Enter an amount greater than zero.");
+      if (!validBets.length) return;
+      const invalidBet = validBets.find((bet) => Number(bet.amountEth) <= 0);
+      if (invalidBet) throw new Error("Enter an amount greater than zero for every wager.");
       setStatus("working");
-      setMessage("Preparing payment...");
+      setMessage(`Preparing ${validBets.length} payment${validBets.length === 1 ? "" : "s"}...`);
 
       let providerForTx = activeProvider || ethereum;
       let activeAddress = walletAddress;
@@ -308,37 +312,45 @@ export default function App() {
       if (!providerForTx) throw new Error("Wallet provider is not available. Use QR connect or open in a wallet browser.");
       await ensureChain(providerForTx);
 
-      const created = await api("/payments/create/", {
-        method: "POST",
-        body: JSON.stringify({
-          walletAddress: activeAddress,
-          amountEth,
-          match: bet.match,
-          pick: bet.pick,
-          odds: bet.odds,
-        }),
-      });
-      setPayment(created);
-
       const browserProvider = new ethers.BrowserProvider(providerForTx);
       const signer = await browserProvider.getSigner();
-      setMessage("Confirm the transaction in your wallet.");
-      const tx = await signer.sendTransaction({
-        to: created.receiverAddress,
-        value: ethers.parseEther(amountEth),
-      });
+      const submittedBets = [];
 
-      setStatus("submitted");
-      setMessage("Transaction sent. Waiting for confirmation...");
-      const submitted = await api(`/payments/${created.id}/submit/`, {
-        method: "POST",
-        body: JSON.stringify({ txHash: tx.hash }),
-      });
-      setPayment(submitted);
-      setMyBets((current) => [{ ...bet, stake: Number(amountEth), status: submitted.status.toUpperCase() }, ...current]);
+      for (const [index, bet] of validBets.entries()) {
+        setMessage(`Creating wager ${index + 1} of ${validBets.length}: ${bet.pick}.`);
+        const created = await api("/payments/create/", {
+          method: "POST",
+          body: JSON.stringify({
+            walletAddress: activeAddress,
+            amountEth: bet.amountEth,
+            match: bet.match,
+            pick: bet.pick,
+            odds: bet.odds,
+          }),
+        });
+        setPayment(created);
+
+        setMessage(`Confirm wager ${index + 1} of ${validBets.length} in your wallet.`);
+        const tx = await signer.sendTransaction({
+          to: created.receiverAddress,
+          value: ethers.parseEther(bet.amountEth),
+        });
+
+        setStatus("submitted");
+        setMessage(`Transaction ${index + 1} sent. Waiting for backend verification...`);
+        const submitted = await api(`/payments/${created.id}/submit/`, {
+          method: "POST",
+          body: JSON.stringify({ txHash: tx.hash }),
+        });
+        setPayment(submitted);
+        submittedBets.push({ ...bet, stake: Number(bet.amountEth), status: submitted.status.toUpperCase(), txHash: tx.hash });
+      }
+
+      setMyBets((current) => [...submittedBets.reverse(), ...current]);
       setBets([]);
       setModalOpen(false);
-      showToast("✓  PREDICTION SUBMITTED ON-CHAIN!");
+      setMessage(`${submittedBets.length} wager${submittedBets.length === 1 ? "" : "s"} submitted on-chain.`);
+      showToast(`✓  ${submittedBets.length} PREDICTION${submittedBets.length === 1 ? "" : "S"} SUBMITTED ON-CHAIN!`);
     } catch (error) {
       setStatus("failed");
       setMessage(error.shortMessage || error.message);
@@ -409,28 +421,36 @@ export default function App() {
         </aside>
       </div>
 
-      {modalOpen && modalBet && (
+      {modalOpen && validBets.length > 0 && (
         <div className="modal-overlay open" onClick={(event) => event.target === event.currentTarget && setModalOpen(false)}>
           <div className="modal">
             <div className="modal-header">
-              <div className="modal-title">CONFIRM WAGER</div>
+              <div className="modal-title">CONFIRM {validBets.length} WAGER{validBets.length === 1 ? "" : "S"}</div>
               <button className="modal-close" onClick={() => setModalOpen(false)}>✕</button>
             </div>
             <div className="modal-body">
-              <div className="modal-selection-label">SELECTION</div>
-              <div className="modal-selection-val"><span className="pick">{modalBet.pick}</span><span className="odds">{modalBet.odds.toFixed(2)}X</span></div>
-              <div className="modal-input-label">WAGER AMOUNT (ETH)</div>
-              <div className="modal-input-wrap">
-                <div className="modal-input-prefix">Ξ</div>
-                <input className="modal-input" type="number" placeholder="0.00" value={modalAmount} onChange={(event) => updateStake(0, event.target.value)} />
-                <button className="modal-input-max" onClick={() => updateStake(0, "1.00")}>MAX</button>
+              <div className="modal-selection-label">SELECTIONS</div>
+              <div className="modal-bet-list">
+                {validBets.map((bet, index) => (
+                  <div className="modal-bet-row" key={`${bet.match}-${bet.pick}`}>
+                    <div>
+                      <div className="modal-bet-match">{bet.match}</div>
+                      <div className="modal-bet-pick">{bet.pick}</div>
+                    </div>
+                    <div className="modal-bet-right">
+                      <div>{Number(bet.amountEth || 0).toFixed(4)} ETH</div>
+                      <div>{bet.odds.toFixed(2)}X</div>
+                    </div>
+                    <input className="modal-bet-input" type="number" min="0" step="0.001" value={bet.stake} onChange={(event) => updateStake(index, event.target.value)} />
+                  </div>
+                ))}
               </div>
               <div className="modal-payout">
-                <div><div className="modal-payout-label">POTENTIAL PAYOUT</div><div className="modal-payout-val">{modalPayout} ETH</div></div>
-                <div style={{ textAlign: "right" }}><div className="modal-payout-label">GAS EST.</div><div className="gas-est">~0.002 ETH</div></div>
+                <div><div className="modal-payout-label">POTENTIAL PAYOUT</div><div className="modal-payout-val">{totalPayout.toFixed(4)} ETH</div></div>
+                <div style={{ textAlign: "right" }}><div className="modal-payout-label">TOTAL STAKE</div><div className="gas-est">{totalStake.toFixed(4)} ETH</div></div>
               </div>
               <button className="modal-confirm-btn" disabled={status === "working"} onClick={payNow}>
-                <span>{status === "working" ? "CONFIRMING ON-CHAIN..." : "⚡ SIGN & PLACE PREDICTION"}</span>
+                <span>{status === "working" ? "CONFIRMING ON-CHAIN..." : `⚡ SIGN ${validBets.length} TRANSACTION${validBets.length === 1 ? "" : "S"}`}</span>
                 {status === "working" && <div className="spinner visible"></div>}
               </button>
             </div>
