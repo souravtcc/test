@@ -1,7 +1,10 @@
 import json
+import traceback
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.test import Client
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -83,6 +86,29 @@ def _activity(event, message, wallet=None, payment=None, prediction=None, metada
 
 def _bad_request(message, status=400):
     return JsonResponse({"error": message}, status=status)
+
+
+def admin_debug(request):
+    if settings.DEBUG is False and request.GET.get("key") != settings.ADMIN_DEBUG_KEY:
+        return _bad_request("Not found.", 404)
+
+    path = request.GET.get("path", "/admin/payments/payment/")
+    if not path.startswith("/admin/"):
+        return _bad_request("Only admin paths are allowed.")
+
+    try:
+        user = get_user_model().objects.filter(is_superuser=True).order_by("id").first()
+        if not user:
+            return _bad_request("No superuser exists.", 500)
+        client = Client(raise_request_exception=True, HTTP_HOST=request.get_host())
+        client.force_login(user)
+        response = client.get(path)
+        return JsonResponse({"ok": True, "status": response.status_code})
+    except Exception:
+        return JsonResponse(
+            {"ok": False, "traceback": traceback.format_exc()},
+            status=500,
+        )
 
 
 def _verify_on_chain(payment):
