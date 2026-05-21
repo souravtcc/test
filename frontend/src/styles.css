@@ -130,6 +130,22 @@ nav {
   font-size: 9px;
 }
 .stat-pill .val { color: var(--yellow); font-weight: 700; font-family: "Space Mono", monospace; }
+.balance-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--green);
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.balance-pill .val {
+  color: var(--green);
+  font-weight: 700;
+  font-family: "Space Mono", monospace;
+}
 .wallet-btn {
   background: var(--yellow);
   color: #000;
@@ -543,6 +559,11 @@ nav {
   .nav-tabs { display: none; }
   .nav-right { justify-content: stretch; }
   .wallet-btn { flex: 1; justify-content: center; }
+  .balance-pill {
+    width: 100%;
+    justify-content: center;
+    min-height: 34px;
+  }
   .wallet-fallback {
     margin: 10px 12px 0;
     flex-direction: column;

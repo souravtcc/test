@@ -126,6 +126,11 @@ function currentDappUrl() {
   return window.location.href;
 }
 
+function isMobileBrowser() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 function walletOpenLinks() {
   const url = currentDappUrl();
   const withoutProtocol = url.replace(/^https?:\/\//, "");
@@ -160,6 +165,7 @@ export default function App() {
   const [config, setConfig] = useState(null);
   const [walletAddress, setWalletAddress] = useState("");
   const [walletName, setWalletName] = useState("");
+  const [walletBalance, setWalletBalance] = useState("");
   const [activeProvider, setActiveProvider] = useState(null);
   const [tab, setTab] = useState("markets");
   const [bets, setBets] = useState([]);
@@ -206,17 +212,54 @@ export default function App() {
       setActiveProvider(ethereum);
       setWalletAddress(accounts[0]);
       setWalletName(detectWallet(ethereum));
+      await refreshWalletBalance(accounts[0], ethereum);
       saveWalletConnection(accounts[0], detectWallet(ethereum), Number(network.chainId));
     }).catch(() => {});
   }, [ethereum]);
+
+  useEffect(() => {
+    if (!activeProvider?.on) return;
+    const handleAccountsChanged = async (accounts) => {
+      const nextAddress = accounts?.[0] || "";
+      setWalletAddress(nextAddress);
+      if (nextAddress) await refreshWalletBalance(nextAddress, activeProvider);
+      else setWalletBalance("");
+    };
+    const handleChainChanged = () => {
+      if (walletAddress) refreshWalletBalance(walletAddress, activeProvider);
+    };
+    activeProvider.on("accountsChanged", handleAccountsChanged);
+    activeProvider.on("chainChanged", handleChainChanged);
+    return () => {
+      activeProvider.removeListener?.("accountsChanged", handleAccountsChanged);
+      activeProvider.removeListener?.("chainChanged", handleChainChanged);
+    };
+  }, [activeProvider, walletAddress]);
 
   function showToast(text) {
     setToast(text);
     window.setTimeout(() => setToast(""), 3500);
   }
 
+  async function refreshWalletBalance(address, provider) {
+    if (!address || !provider) return;
+    try {
+      const browserProvider = new ethers.BrowserProvider(provider);
+      const balanceWei = await browserProvider.getBalance(address);
+      setWalletBalance(Number(ethers.formatEther(balanceWei)).toFixed(4));
+    } catch {
+      setWalletBalance("");
+    }
+  }
+
   function showMobileWalletLinks(preferredWallet) {
     setPreferredMobileWallet(preferredWallet);
+    if (isMobileBrowser()) {
+      setWalletLinksOpen(false);
+      setMessage(`Opening ${preferredWallet === "trust" ? "Trust Wallet" : "MetaMask"}...`);
+      openWalletApp(preferredWallet);
+      return;
+    }
     setWalletLinksOpen(true);
     setMessage("Open this site inside MetaMask or Trust Wallet, then tap connect again.");
   }
@@ -245,8 +288,9 @@ export default function App() {
     setActiveProvider(provider);
     setWalletAddress(accounts[0]);
     setWalletName(connectedWalletName);
+    await refreshWalletBalance(accounts[0], provider);
     setWalletLinksOpen(false);
-    setMessage("Wallet connected.");
+    setMessage(`${connectedWalletName} connected.`);
     saveWalletConnection(accounts[0], connectedWalletName, Number(network.chainId));
     return { address: accounts[0], provider };
   }
@@ -269,6 +313,7 @@ export default function App() {
     setActiveProvider(provider);
     setWalletAddress(address);
     setWalletName("WalletConnect");
+    await refreshWalletBalance(address, provider);
     setMessage("Wallet connected.");
     saveWalletConnection(address, "WalletConnect", Number(network.chainId));
     return { address, provider };
@@ -340,6 +385,7 @@ export default function App() {
           to: created.receiverAddress,
           value: ethers.parseEther(bet.amountEth),
         });
+        await refreshWalletBalance(activeAddress, providerForTx);
 
         setStatus("submitted");
         setMessage(`Transaction ${index + 1} sent. Waiting for backend verification...`);
@@ -379,6 +425,7 @@ export default function App() {
             <button className="wallet-btn" onClick={() => connectInjectedWallet("metamask")}>
               <div className="wallet-dot"></div>{walletAddress ? `${walletName} ${shorten(walletAddress)}` : "METAMASK"}
             </button>
+            {walletAddress && <div className="balance-pill"><span>BAL</span><span className="val">{walletBalance || "0.0000"} ETH</span></div>}
             <button className="wallet-btn trust" onClick={() => connectInjectedWallet("trust")}>TRUST</button>
             <button className="wallet-btn qr" onClick={connectWalletConnect}>QR</button>
           </div>
