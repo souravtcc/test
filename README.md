@@ -21,8 +21,8 @@ python -m venv .venv
 pip install -r requirements.txt
 python manage.py migrate
 $env:PAYMENT_RECEIVER_ADDRESS="0xYourRealReceiverWallet"
-$env:CHAIN_ID="11155111"
-$env:RPC_URL="https://sepolia.infura.io/v3/YOUR_KEY"
+$env:CHAIN_ID="1"
+$env:RPC_URL="https://mainnet.infura.io/v3/YOUR_KEY"
 python manage.py runserver 127.0.0.1:8000
 ```
 
@@ -51,5 +51,5 @@ Open the Vite URL, usually `http://127.0.0.1:5173`.
 
 - Replace `PAYMENT_RECEIVER_ADDRESS` with a real wallet you control.
 - Use a reliable RPC provider for the selected chain.
-- Start on Sepolia testnet before using real funds.
+- `CHAIN_ID=1` uses Ethereum mainnet and sends real ETH. Use `CHAIN_ID=11155111` and a Sepolia RPC URL for testnet-only testing.
 - This implementation handles native currency payments. For USDT/USDC/ERC-20 payments, add token contract calls in React and verify `Transfer` logs in Django.

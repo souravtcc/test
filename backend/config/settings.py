@@ -133,8 +133,10 @@ PAYMENT_RECEIVER_ADDRESS = os.environ.get(
     "PAYMENT_RECEIVER_ADDRESS",
     "0x6B3A21807fEE4f04E525DaEBcc0ceC0fCbc3bf91",
 )
-CHAIN_ID = int(os.environ.get("CHAIN_ID", "11155111"))
+CHAIN_ID = int(os.environ.get("CHAIN_ID", "1"))
 RPC_URL = os.environ.get("RPC_URL", "")
+if CHAIN_ID == 1 and "sepolia.infura.io" in RPC_URL:
+    RPC_URL = RPC_URL.replace("sepolia.infura.io", "mainnet.infura.io")
 CONFIRMATION_BLOCKS = int(os.environ.get("CONFIRMATION_BLOCKS", "1"))
 
 
