@@ -62,7 +62,7 @@ FALLBACK_MARKETS = [
 
 
 def _team_code(team):
-    code = (team.get("code") or "").strip().upper()
+    code = (team.get("code") or team.get("tla") or "").strip().upper()
     if code:
         return code[:3]
     name = (team.get("name") or "TBA").strip().upper()
@@ -131,11 +131,46 @@ def fixture_to_market(item, index=0):
     }
 
 
-def fetch_world_cup_markets():
-    api_key = getattr(settings, "FOOTBALL_API_KEY", "")
-    if not api_key:
-        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+def football_data_match_to_market(item, index=0):
+    home = item.get("homeTeam") or {}
+    away = item.get("awayTeam") or {}
+    fixture_id = int(item.get("id") or index + 1)
+    code_a = _team_code(home)
+    code_b = _team_code(away)
+    team_a = (home.get("shortName") or home.get("name") or code_a).upper()
+    team_b = (away.get("shortName") or away.get("name") or code_b).upper()
+    home_odds, draw_odds, away_odds = _generated_odds(fixture_id)
+    split_a = 40 + (fixture_id % 25)
+    split_b = 20 + ((fixture_id // 2) % 25)
 
+    return {
+        "match": f"{code_a} VS {code_b}",
+        "stage": (item.get("stage") or item.get("group") or "FIFA WORLD CUP").replace("_", " ").upper(),
+        "venue": "TBA",
+        "time": _format_time(item.get("utcDate")),
+        "pool": f"{100 + fixture_id % 450} ETH",
+        "codeA": code_a,
+        "teamA": team_a,
+        "flagA": code_a[:2],
+        "codeB": code_b,
+        "teamB": team_b,
+        "flagB": code_b[:2],
+        "matchNo": f"WC - {fixture_id}",
+        "isoDate": item.get("utcDate") or "",
+        "status": item.get("status") or "",
+        "featured": index == 0,
+        "bettors": f"{700 + fixture_id % 900:,}",
+        "splitA": split_a,
+        "splitB": split_b,
+        "odds": [
+            {"label": f"{code_a} WINS", "pick": f"{team_a} TO WIN", "value": home_odds, "change": "+0.04"},
+            {"label": "DRAW", "pick": "DRAW", "value": draw_odds, "change": "-", "draw": True},
+            {"label": f"{code_b} WINS", "pick": f"{team_b} TO WIN", "value": away_odds, "change": "-0.03", "down": True},
+        ],
+    }
+
+
+def _fetch_api_football_markets(api_key):
     query = urlencode(
         {
             "league": settings.FOOTBALL_API_LEAGUE_ID,
@@ -156,3 +191,34 @@ def fetch_world_cup_markets():
     if not markets:
         return {"source": "fallback", "markets": FALLBACK_MARKETS}
     return {"source": "api-football", "markets": markets}
+
+
+def _fetch_football_data_markets(api_key):
+    query = urlencode({"season": settings.FOOTBALL_API_SEASON})
+    request = Request(
+        f"{settings.FOOTBALL_DATA_BASE.rstrip('/')}/competitions/{settings.FOOTBALL_DATA_COMPETITION}/matches?{query}",
+        headers={"X-Auth-Token": api_key},
+    )
+    try:
+        with urlopen(request, timeout=settings.FOOTBALL_API_TIMEOUT) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, URLError, json.JSONDecodeError):
+        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+
+    markets = [
+        football_data_match_to_market(item, index)
+        for index, item in enumerate(payload.get("matches", [])[:48])
+    ]
+    if not markets:
+        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+    return {"source": "football-data", "markets": markets}
+
+
+def fetch_world_cup_markets():
+    api_key = getattr(settings, "FOOTBALL_API_KEY", "")
+    if not api_key:
+        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+
+    if settings.FOOTBALL_PROVIDER == "api-football":
+        return _fetch_api_football_markets(api_key)
+    return _fetch_football_data_markets(api_key)

@@ -6,7 +6,7 @@ from django.core.management import call_command
 
 from config.settings import normalize_database_url, postgres_database_from_url
 
-from .football import fixture_to_market
+from .football import fixture_to_market, football_data_match_to_market
 from .models import Activity, Payment, Prediction, Wallet
 
 
@@ -93,6 +93,23 @@ class PaymentApiTests(TestCase):
         self.assertEqual(market["stage"], "GROUP STAGE - 1")
         self.assertEqual(market["status"], "NS")
         self.assertEqual(market["isoDate"], "2026-06-11T20:00:00+00:00")
+
+    def test_football_data_match_to_market_maps_world_cup_match(self):
+        market = football_data_match_to_market(
+            {
+                "id": 999,
+                "utcDate": "2026-06-12T00:30:00Z",
+                "stage": "GROUP_STAGE",
+                "status": "TIMED",
+                "homeTeam": {"name": "Mexico", "shortName": "Mexico", "tla": "MEX"},
+                "awayTeam": {"name": "South Africa", "shortName": "South Africa", "tla": "RSA"},
+            }
+        )
+
+        self.assertEqual(market["match"], "MEX VS RSA")
+        self.assertEqual(market["stage"], "GROUP STAGE")
+        self.assertEqual(market["status"], "TIMED")
+        self.assertEqual(market["isoDate"], "2026-06-12T00:30:00Z")
 
     def test_wallet_connection_upserts_wallet_and_activity(self):
         response = self.post_json(

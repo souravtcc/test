@@ -15,6 +15,8 @@ const fallbackMarkets = [
     stage: "QUARTER FINAL",
     venue: "LUSAIL STADIUM",
     time: "JUL 04 · 20:00 GST",
+    isoDate: "2026-07-04T16:00:00Z",
+    status: "TIMED",
     pool: "450 ETH",
     codeA: "ARG",
     teamA: "ARGENTINA",
@@ -38,6 +40,8 @@ const fallbackMarkets = [
     stage: "QUARTER FINAL",
     venue: "HARD ROCK STADIUM",
     time: "JUL 05 · 17:00 EDT",
+    isoDate: "2026-07-05T21:00:00Z",
+    status: "TIMED",
     pool: "380 ETH",
     codeA: "BRA",
     teamA: "BRAZIL",
@@ -60,6 +64,8 @@ const fallbackMarkets = [
     stage: "QUARTER FINAL",
     venue: "ESTADIO AZTECA",
     time: "JUL 06 · 21:00 CDT",
+    isoDate: "2026-07-07T02:00:00Z",
+    status: "TIMED",
     pool: "290 ETH",
     codeA: "GER",
     teamA: "GERMANY",
@@ -82,6 +88,8 @@ const fallbackMarkets = [
     stage: "QUARTER FINAL",
     venue: "METLIFE STADIUM",
     time: "JUL 07 · 20:00 EDT",
+    isoDate: "2026-07-08T00:00:00Z",
+    status: "TIMED",
     pool: "300 ETH",
     codeA: "ENG",
     teamA: "ENGLAND",
@@ -557,7 +565,8 @@ function marketIsUpcoming(market) {
   if (!market.isoDate) return true;
   const date = new Date(market.isoDate);
   if (Number.isNaN(date.getTime())) return true;
-  return date.getTime() >= Date.now() && !["FT", "AET", "PEN"].includes(market.status);
+  const status = String(market.status || "").toUpperCase();
+  return date.getTime() >= Date.now() && !["FT", "AET", "PEN", "FINISHED"].includes(status);
 }
 
 function LiveMarkets({ markets, source, bets, onAddBet }) {
@@ -567,9 +576,10 @@ function LiveMarkets({ markets, source, bets, onAddBet }) {
     if (filter === "upcoming") return marketIsUpcoming(market);
     return true;
   });
-  const visibleMarkets = shownMarkets.length ? shownMarkets : markets;
+  const title = filter === "upcoming" ? "UPCOMING MARKETS" : filter === "today" ? "TODAY'S MARKETS" : "LIVE MARKETS";
+  const badge = source === "fallback" ? "DEMO" : "REAL";
 
-  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>LIVE MARKETS <span className="badge">{source === "api-football" ? "REAL" : "DEMO"}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div><div className="matches-grid">{visibleMarkets.map((market) => <MatchCard key={`${market.match}-${market.matchNo}`} market={market} bets={bets} onAddBet={onAddBet} />)}</div></div>;
+  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>{title} <span className="badge">{badge}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div>{shownMarkets.length ? <div className="matches-grid">{shownMarkets.map((market) => <MatchCard key={`${market.match}-${market.matchNo}`} market={market} bets={bets} onAddBet={onAddBet} />)}</div> : <div className="empty-table">NO {filter.toUpperCase()} MATCHES AVAILABLE YET.</div>}</div>;
 }
 
 function Markets({ bets, onAddBet }) {
