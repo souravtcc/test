@@ -1,43 +1,20 @@
-# Django + React Wallet Payments
+# FWC26 Dapp Payments
 
-This project integrates MetaMask and Trust Wallet payments with a Django verification backend, local SQLite for development, Hostinger MySQL/MariaDB for deployment, and a React wallet UI.
+Django + React wallet betting app for FIFA World Cup 2026 markets. The backend verifies wallet payments and serves match markets; the frontend connects MetaMask, Trust Wallet, and WalletConnect.
 
-## What it does
-
-- Connects to injected wallets such as MetaMask and Trust Wallet.
-- Creates a payment intent in Django before the user pays.
-- Sends native chain currency from the connected wallet to your receiver wallet.
-- Stores the transaction hash in Django.
-- Verifies sender, receiver, amount, transaction status, and confirmations using your RPC endpoint.
-
-## Setup
-
-Backend:
+## Local Backend
 
 ```powershell
 cd backend
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python manage.py migrate
-$env:PAYMENT_RECEIVER_ADDRESS="0xYourRealReceiverWallet"
-$env:CHAIN_ID="1"
-$env:RPC_URL="https://mainnet.infura.io/v3/YOUR_KEY"
 python manage.py runserver 127.0.0.1:8000
 ```
 
-For Hostinger MySQL/MariaDB, set:
+Use `backend/.env` for local backend config.
 
-```powershell
-$env:DB_ENGINE="mysql"
-$env:MYSQL_DATABASE="your_hostinger_db_name"
-$env:MYSQL_USER="your_hostinger_db_user"
-$env:MYSQL_PASSWORD="your_hostinger_db_password"
-$env:MYSQL_HOST="your_hostinger_mysql_host"
-$env:MYSQL_PORT="3306"
-```
-
-Frontend:
+## Local Frontend
 
 ```powershell
 cd frontend
@@ -45,11 +22,25 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL, usually `http://127.0.0.1:5173`.
+Use `frontend/.env` for Vite frontend config.
 
-## Production notes
+## Required Environment
 
-- Replace `PAYMENT_RECEIVER_ADDRESS` with a real wallet you control.
-- Use a reliable RPC provider for the selected chain.
-- `CHAIN_ID=1` uses Ethereum mainnet and sends real ETH. Use `CHAIN_ID=11155111` and a Sepolia RPC URL for testnet-only testing.
-- This implementation handles native currency payments. For USDT/USDC/ERC-20 payments, add token contract calls in React and verify `Transfer` logs in Django.
+```env
+DJANGO_SECRET_KEY=make_any_long_random_secret
+DJANGO_DEBUG=0
+DJANGO_ALLOWED_HOSTS=.onrender.com,127.0.0.1,localhost
+DATABASE_URL=postgresql://postgres.wxnpdkiqgenlpdgpilky:sourav%4015299@aws-1-ap-southeast-2.pooler.supabase.com:6543/postgres?sslmode=require
+RPC_URL=https://mainnet.infura.io/v3/e065c63298cb44ff8ba35ab232d2ab6e
+CHAIN_ID=1
+PAYMENT_RECEIVER_ADDRESS=0x6B3A21807fEE4f04E525DaEBcc0ceC0fCbc3bf91
+CONFIRMATION_BLOCKS=1
+FOOTBALL_PROVIDER=football-data
+FOOTBALL_API_KEY=ee32f888beb1431b8148f281d3cdf57a
+FOOTBALL_DATA_COMPETITION=WC
+FOOTBALL_API_SEASON=2026
+VITE_API_BASE=https://test-bjer.onrender.com/api
+VITE_WALLETCONNECT_PROJECT_ID=3770f1167e86e3c5a1b4e8f323f56813
+```
+
+`CHAIN_ID=1` and the mainnet RPC URL send real ETH. Use Sepolia only for test payments.
