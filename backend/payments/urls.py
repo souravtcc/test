@@ -4,7 +4,6 @@ from . import views
 
 
 urlpatterns = [
-    path("admin-debug/", views.admin_debug),
     path("config/", views.payment_config),
     path("dashboard/", views.dashboard),
     path("wallets/connect/", views.connect_wallet),

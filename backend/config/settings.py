@@ -136,7 +136,6 @@ PAYMENT_RECEIVER_ADDRESS = os.environ.get(
 CHAIN_ID = int(os.environ.get("CHAIN_ID", "11155111"))
 RPC_URL = os.environ.get("RPC_URL", "")
 CONFIRMATION_BLOCKS = int(os.environ.get("CONFIRMATION_BLOCKS", "1"))
-ADMIN_DEBUG_KEY = os.environ.get("ADMIN_DEBUG_KEY", "render-debug")
 
 
 class CorsMiddleware:
