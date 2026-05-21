@@ -15,6 +15,14 @@ services:
         value: "1"
       - key: CONFIRMATION_BLOCKS
         value: "1"
+      - key: PAYMENT_ASSET
+        value: ERC20
+      - key: PAYMENT_TOKEN_ADDRESS
+        value: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+      - key: PAYMENT_TOKEN_SYMBOL
+        value: WETH
+      - key: PAYMENT_TOKEN_DECIMALS
+        value: "18"
       - key: FOOTBALL_PROVIDER
         value: football-data
       - key: FOOTBALL_DATA_COMPETITION

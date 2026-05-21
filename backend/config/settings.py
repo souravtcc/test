@@ -138,6 +138,10 @@ RPC_URL = os.environ.get("RPC_URL", "")
 if CHAIN_ID == 1 and "sepolia.infura.io" in RPC_URL:
     RPC_URL = RPC_URL.replace("sepolia.infura.io", "mainnet.infura.io")
 CONFIRMATION_BLOCKS = int(os.environ.get("CONFIRMATION_BLOCKS", "1"))
+PAYMENT_ASSET = os.environ.get("PAYMENT_ASSET", "ERC20").upper()
+PAYMENT_TOKEN_ADDRESS = os.environ.get("PAYMENT_TOKEN_ADDRESS", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+PAYMENT_TOKEN_SYMBOL = os.environ.get("PAYMENT_TOKEN_SYMBOL", "WETH")
+PAYMENT_TOKEN_DECIMALS = int(os.environ.get("PAYMENT_TOKEN_DECIMALS", "18"))
 
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY", "")
 FOOTBALL_PROVIDER = os.environ.get("FOOTBALL_PROVIDER", "football-data").lower()

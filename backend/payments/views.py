@@ -36,6 +36,48 @@ def _is_tx_hash(value):
     )
 
 
+def _address_topic(address):
+    return "0x" + "0" * 24 + address.lower().replace("0x", "")
+
+
+def _hex_value(value):
+    if isinstance(value, bytes):
+        return "0x" + value.hex()
+    return str(value)
+
+
+def _verify_erc20_transfer(web3, receipt, tx, payment, required_units):
+    token = Web3.to_checksum_address(settings.PAYMENT_TOKEN_ADDRESS)
+    receiver = Web3.to_checksum_address(payment.receiver_address)
+    sender = Web3.to_checksum_address(payment.wallet_address)
+    transfer_topic = web3.keccak(text="Transfer(address,address,uint256)").hex()
+    sender_topic = _address_topic(sender)
+    receiver_topic = _address_topic(receiver)
+
+    errors = []
+    if Web3.to_checksum_address(tx.get("to")) != token:
+        errors.append("Token contract does not match.")
+    if Web3.to_checksum_address(tx.get("from")) != sender:
+        errors.append("Sender wallet does not match.")
+
+    transferred = 0
+    for log in receipt.get("logs", []):
+        topics = [_hex_value(topic).lower() for topic in log.get("topics", [])]
+        if len(topics) < 3:
+            continue
+        if Web3.to_checksum_address(log.get("address")) != token:
+            continue
+        if topics[0] != transfer_topic.lower():
+            continue
+        if topics[1] != sender_topic.lower() or topics[2] != receiver_topic.lower():
+            continue
+        transferred += int(_hex_value(log.get("data", "0x0")), 16)
+
+    if transferred < required_units:
+        errors.append(f"{settings.PAYMENT_TOKEN_SYMBOL} transfer amount is lower than expected.")
+    return errors
+
+
 def _json_body(request):
     try:
         return json.loads(request.body.decode("utf-8") or "{}")
@@ -51,6 +93,10 @@ def _payment_json(payment):
         "amountEth": str(payment.amount_eth),
         "chainId": payment.chain_id,
         "receiverAddress": payment.receiver_address,
+        "paymentAsset": settings.PAYMENT_ASSET,
+        "tokenAddress": settings.PAYMENT_TOKEN_ADDRESS,
+        "tokenSymbol": settings.PAYMENT_TOKEN_SYMBOL,
+        "tokenDecimals": settings.PAYMENT_TOKEN_DECIMALS,
         "match": payment.match,
         "pick": payment.pick,
         "odds": str(payment.odds),
@@ -103,7 +149,10 @@ def _verify_on_chain(payment):
     receipt = web3.eth.get_transaction_receipt(payment.tx_hash)
     tx = web3.eth.get_transaction(payment.tx_hash)
 
-    required_wei = web3.to_wei(payment.amount_eth, "ether")
+    if settings.PAYMENT_ASSET == "ERC20":
+        required_units = int(payment.amount_eth * (Decimal(10) ** settings.PAYMENT_TOKEN_DECIMALS))
+    else:
+        required_units = web3.to_wei(payment.amount_eth, "ether")
     receiver = Web3.to_checksum_address(payment.receiver_address)
     sender = Web3.to_checksum_address(payment.wallet_address)
     confirmations = max(0, web3.eth.block_number - receipt.blockNumber)
@@ -111,12 +160,15 @@ def _verify_on_chain(payment):
     errors = []
     if receipt.status != 1:
         errors.append("Transaction reverted.")
-    if tx.get("to") != receiver:
-        errors.append("Receiver address does not match.")
-    if tx.get("from") != sender:
-        errors.append("Sender wallet does not match.")
-    if int(tx.get("value", 0)) < required_wei:
-        errors.append("Transaction value is lower than expected.")
+    if settings.PAYMENT_ASSET == "ERC20":
+        errors.extend(_verify_erc20_transfer(web3, receipt, tx, payment, required_units))
+    else:
+        if Web3.to_checksum_address(tx.get("to")) != receiver:
+            errors.append("Receiver address does not match.")
+        if Web3.to_checksum_address(tx.get("from")) != sender:
+            errors.append("Sender wallet does not match.")
+        if int(tx.get("value", 0)) < required_units:
+            errors.append("Transaction value is lower than expected.")
     if confirmations < settings.CONFIRMATION_BLOCKS:
         payment.status = Payment.Status.SUBMITTED
         payment.failure_reason = f"Waiting for {settings.CONFIRMATION_BLOCKS} confirmation(s)."
@@ -152,6 +204,10 @@ def payment_config(_request):
             "receiverAddress": settings.PAYMENT_RECEIVER_ADDRESS,
             "chainId": settings.CHAIN_ID,
             "confirmationBlocks": settings.CONFIRMATION_BLOCKS,
+            "paymentAsset": settings.PAYMENT_ASSET,
+            "tokenAddress": settings.PAYMENT_TOKEN_ADDRESS,
+            "tokenSymbol": settings.PAYMENT_TOKEN_SYMBOL,
+            "tokenDecimals": settings.PAYMENT_TOKEN_DECIMALS,
         }
     )
 
@@ -213,6 +269,8 @@ def create_payment(request):
     receiver = settings.PAYMENT_RECEIVER_ADDRESS
     if not _is_address(receiver):
         return _bad_request("Server receiver wallet is not configured.")
+    if settings.PAYMENT_ASSET == "ERC20" and not _is_address(settings.PAYMENT_TOKEN_ADDRESS):
+        return _bad_request("Server ERC20 token contract is not configured.")
 
     try:
         odds = Decimal(str(data.get("odds", "1")))

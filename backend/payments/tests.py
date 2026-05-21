@@ -47,7 +47,15 @@ class EnsureAdminCommandTests(TestCase):
         self.assertTrue(user.check_password("Admin@12345"))
 
 
-@override_settings(PAYMENT_RECEIVER_ADDRESS=RECEIVER, CHAIN_ID=11155111, RPC_URL="")
+@override_settings(
+    PAYMENT_RECEIVER_ADDRESS=RECEIVER,
+    CHAIN_ID=1,
+    RPC_URL="",
+    PAYMENT_ASSET="ERC20",
+    PAYMENT_TOKEN_ADDRESS="0x3333333333333333333333333333333333333333",
+    PAYMENT_TOKEN_SYMBOL="WETH",
+    PAYMENT_TOKEN_DECIMALS=18,
+)
 class PaymentApiTests(TestCase):
     def post_json(self, path, payload):
         return self.client.post(
@@ -61,7 +69,9 @@ class PaymentApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["receiverAddress"], RECEIVER)
-        self.assertEqual(response.json()["chainId"], 11155111)
+        self.assertEqual(response.json()["chainId"], 1)
+        self.assertEqual(response.json()["paymentAsset"], "ERC20")
+        self.assertEqual(response.json()["tokenSymbol"], "WETH")
 
     def test_markets_returns_world_cup_markets(self):
         response = self.client.get("/api/payments/markets/")
@@ -145,6 +155,8 @@ class PaymentApiTests(TestCase):
         self.assertEqual(Prediction.objects.count(), 1)
         self.assertEqual(Payment.objects.count(), 1)
         self.assertEqual(response.json()["receiverAddress"], RECEIVER.lower())
+        self.assertEqual(response.json()["paymentAsset"], "ERC20")
+        self.assertEqual(response.json()["tokenAddress"], "0x3333333333333333333333333333333333333333")
         self.assertEqual(response.json()["status"], Payment.Status.CREATED)
 
     def test_submit_payment_records_hash_and_keeps_rpc_pending(self):

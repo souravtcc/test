@@ -8,6 +8,9 @@ function normalizeApiBase(value) {
 }
 
 const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE);
+const ERC20_ABI = [
+  "function transfer(address to, uint256 amount) returns (bool)",
+];
 
 const fallbackMarkets = [
   {
@@ -191,6 +194,7 @@ export default function App() {
 
   const ethereum = typeof window !== "undefined" ? window.ethereum : null;
   const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
+  const paymentSymbol = config?.tokenSymbol || (config?.paymentAsset === "ERC20" ? "TOKEN" : "ETH");
   const totalPayout = useMemo(
     () => bets.reduce((sum, bet) => sum + (Number(bet.stake) || 0) * bet.odds, 0),
     [bets],
@@ -402,10 +406,18 @@ export default function App() {
         setPayment(created);
 
         setMessage(`Confirm wager ${index + 1} of ${validBets.length} in your wallet.`);
-        const tx = await signer.sendTransaction({
-          to: created.receiverAddress,
-          value: ethers.parseEther(bet.amountEth),
-        });
+        const paymentAsset = created.paymentAsset || config?.paymentAsset;
+        const tokenDecimals = created.tokenDecimals || config?.tokenDecimals || 18;
+        const tx = paymentAsset === "ERC20"
+          ? await new ethers.Contract(
+            created.tokenAddress || config.tokenAddress,
+            ERC20_ABI,
+            signer,
+          ).transfer(created.receiverAddress, ethers.parseUnits(bet.amountEth, tokenDecimals))
+          : await signer.sendTransaction({
+            to: created.receiverAddress,
+            value: ethers.parseEther(bet.amountEth),
+          });
         await refreshWalletBalance(activeAddress, providerForTx);
 
         setStatus("submitted");
@@ -415,7 +427,7 @@ export default function App() {
           body: JSON.stringify({ txHash: tx.hash }),
         });
         setPayment(submitted);
-        submittedBets.push({ ...bet, stake: Number(bet.amountEth), status: submitted.status.toUpperCase(), txHash: tx.hash });
+        submittedBets.push({ ...bet, stake: Number(bet.amountEth), status: submitted.status.toUpperCase(), txHash: tx.hash, symbol: paymentSymbol });
       }
 
       setMyBets((current) => [...submittedBets.reverse(), ...current]);
@@ -484,6 +496,7 @@ export default function App() {
           <BetSlip
             bets={bets}
             totalPayout={totalPayout}
+            paymentSymbol={paymentSymbol}
             updateStake={updateStake}
             removeBet={(index) => setBets((current) => current.filter((_, i) => i !== index))}
             clearSlip={() => setBets([])}
@@ -511,7 +524,7 @@ export default function App() {
                       <div className="modal-bet-pick">{bet.pick}</div>
                     </div>
                     <div className="modal-bet-right">
-                      <div>{Number(bet.amountEth || 0).toFixed(4)} ETH</div>
+                      <div>{Number(bet.amountEth || 0).toFixed(4)} {paymentSymbol}</div>
                       <div>{bet.odds.toFixed(2)}X</div>
                     </div>
                     <input className="modal-bet-input" type="number" min="0" step="0.001" value={bet.stake} onChange={(event) => updateStake(index, event.target.value)} />
@@ -519,8 +532,8 @@ export default function App() {
                 ))}
               </div>
               <div className="modal-payout">
-                <div><div className="modal-payout-label">POTENTIAL PAYOUT</div><div className="modal-payout-val">{totalPayout.toFixed(4)} ETH</div></div>
-                <div style={{ textAlign: "right" }}><div className="modal-payout-label">TOTAL STAKE</div><div className="gas-est">{totalStake.toFixed(4)} ETH</div></div>
+                <div><div className="modal-payout-label">POTENTIAL PAYOUT</div><div className="modal-payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</div></div>
+                <div style={{ textAlign: "right" }}><div className="modal-payout-label">TOTAL STAKE</div><div className="gas-est">{totalStake.toFixed(4)} {paymentSymbol}</div></div>
               </div>
               <button className="modal-confirm-btn" disabled={status === "working"} onClick={payNow}>
                 <span>{status === "working" ? "CONFIRMING ON-CHAIN..." : `⚡ SIGN ${validBets.length} TRANSACTION${validBets.length === 1 ? "" : "S"}`}</span>
@@ -606,7 +619,7 @@ function Team({ flag, code, name, odds, right = false }) {
   return <div className={`team-side ${right ? "right" : ""}`}><div className="team-flag">{flag}</div><div className="team-info"><div className="team-code">{code}</div><div className="team-full">{name}</div><div className="team-odds">{odds.toFixed(2)}x</div></div></div>;
 }
 
-function BetSlip({ bets, totalPayout, updateStake, removeBet, clearSlip, openConfirm }) {
+function BetSlip({ bets, totalPayout, paymentSymbol, updateStake, removeBet, clearSlip, openConfirm }) {
   return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">Ξ</div><input className="stake-input" type="number" placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} ETH</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
 }
 
