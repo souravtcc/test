@@ -2,7 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 import EthereumProvider from "@walletconnect/ethereum-provider";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000/api";
+function normalizeApiBase(value) {
+  const base = (value || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
+  return base.endsWith("/api") ? base : `${base}/api`;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE);
 
 const markets = [
   {
