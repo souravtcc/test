@@ -6,7 +6,7 @@ from django.core.management import call_command
 
 from config.settings import normalize_database_url, postgres_database_from_url
 
-from .football import fixture_to_market, football_data_match_to_market
+from .football import FALLBACK_MARKETS, fixture_to_market, football_data_match_to_market
 from .models import Activity, Payment, Prediction, Wallet
 
 
@@ -110,6 +110,12 @@ class PaymentApiTests(TestCase):
         self.assertEqual(market["stage"], "GROUP STAGE")
         self.assertEqual(market["status"], "TIMED")
         self.assertEqual(market["isoDate"], "2026-06-12T00:30:00Z")
+
+    def test_static_fallback_contains_world_cup_upcoming_matches(self):
+        self.assertEqual(FALLBACK_MARKETS[0]["match"], "MEX VS RSA")
+        self.assertEqual(FALLBACK_MARKETS[0]["stage"], "GROUP STAGE")
+        self.assertEqual(FALLBACK_MARKETS[0]["status"], "TIMED")
+        self.assertGreaterEqual(len(FALLBACK_MARKETS), 8)
 
     def test_wallet_connection_upserts_wallet_and_activity(self):
         response = self.post_json(

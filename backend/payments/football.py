@@ -86,6 +86,90 @@ def _generated_odds(seed):
     return round(home, 2), round(draw, 2), round(away, 2)
 
 
+STATIC_WORLD_CUP_FIXTURES = [
+    {
+        "id": 537327,
+        "utcDate": "2026-06-11T19:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_A",
+        "homeTeam": {"name": "Mexico", "shortName": "Mexico", "tla": "MEX"},
+        "awayTeam": {"name": "South Africa", "shortName": "South Africa", "tla": "RSA"},
+    },
+    {
+        "id": 537331,
+        "utcDate": "2026-06-12T02:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_B",
+        "homeTeam": {"name": "Korea Republic", "shortName": "Korea Republic", "tla": "KOR"},
+        "awayTeam": {"name": "Czechia", "shortName": "Czechia", "tla": "CZE"},
+    },
+    {
+        "id": 537332,
+        "utcDate": "2026-06-12T19:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_B",
+        "homeTeam": {"name": "Canada", "shortName": "Canada", "tla": "CAN"},
+        "awayTeam": {"name": "Bosnia and Herzegovina", "shortName": "Bosnia-H.", "tla": "BIH"},
+    },
+    {
+        "id": 537328,
+        "utcDate": "2026-06-13T01:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_D",
+        "homeTeam": {"name": "United States", "shortName": "USA", "tla": "USA"},
+        "awayTeam": {"name": "Paraguay", "shortName": "Paraguay", "tla": "PAR"},
+    },
+    {
+        "id": 537333,
+        "utcDate": "2026-06-13T19:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_C",
+        "homeTeam": {"name": "Qatar", "shortName": "Qatar", "tla": "QAT"},
+        "awayTeam": {"name": "Switzerland", "shortName": "Switzerland", "tla": "SUI"},
+    },
+    {
+        "id": 537334,
+        "utcDate": "2026-06-13T22:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_C",
+        "homeTeam": {"name": "Brazil", "shortName": "Brazil", "tla": "BRA"},
+        "awayTeam": {"name": "Morocco", "shortName": "Morocco", "tla": "MAR"},
+    },
+    {
+        "id": 537338,
+        "utcDate": "2026-06-14T01:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_D",
+        "homeTeam": {"name": "Haiti", "shortName": "Haiti", "tla": "HAI"},
+        "awayTeam": {"name": "Scotland", "shortName": "Scotland", "tla": "SCO"},
+    },
+    {
+        "id": 537339,
+        "utcDate": "2026-06-14T04:00:00Z",
+        "status": "TIMED",
+        "matchday": 1,
+        "stage": "GROUP_STAGE",
+        "group": "GROUP_E",
+        "homeTeam": {"name": "Australia", "shortName": "Australia", "tla": "AUS"},
+        "awayTeam": {"name": "Turkiye", "shortName": "Turkiye", "tla": "TUR"},
+    },
+]
+
+
 def fixture_to_market(item, index=0):
     fixture = item.get("fixture") or {}
     status = fixture.get("status") or {}
@@ -170,6 +254,12 @@ def football_data_match_to_market(item, index=0):
     }
 
 
+FALLBACK_MARKETS = [
+    football_data_match_to_market(item, index)
+    for index, item in enumerate(STATIC_WORLD_CUP_FIXTURES)
+]
+
+
 def _fetch_api_football_markets(api_key):
     query = urlencode(
         {
@@ -185,11 +275,11 @@ def _fetch_api_football_markets(api_key):
         with urlopen(request, timeout=settings.FOOTBALL_API_TIMEOUT) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, URLError, json.JSONDecodeError):
-        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+        return {"source": "world-cup-static", "markets": FALLBACK_MARKETS}
 
     markets = [fixture_to_market(item, index) for index, item in enumerate(payload.get("response", [])[:24])]
     if not markets:
-        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+        return {"source": "world-cup-static", "markets": FALLBACK_MARKETS}
     return {"source": "api-football", "markets": markets}
 
 
@@ -203,21 +293,21 @@ def _fetch_football_data_markets(api_key):
         with urlopen(request, timeout=settings.FOOTBALL_API_TIMEOUT) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, URLError, json.JSONDecodeError):
-        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+        return {"source": "world-cup-static", "markets": FALLBACK_MARKETS}
 
     markets = [
         football_data_match_to_market(item, index)
         for index, item in enumerate(payload.get("matches", [])[:48])
     ]
     if not markets:
-        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+        return {"source": "world-cup-static", "markets": FALLBACK_MARKETS}
     return {"source": "football-data", "markets": markets}
 
 
 def fetch_world_cup_markets():
     api_key = getattr(settings, "FOOTBALL_API_KEY", "")
     if not api_key:
-        return {"source": "fallback", "markets": FALLBACK_MARKETS}
+        return {"source": "world-cup-static", "markets": FALLBACK_MARKETS}
 
     if settings.FOOTBALL_PROVIDER == "api-football":
         return _fetch_api_football_markets(api_key)
