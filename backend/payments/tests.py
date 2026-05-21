@@ -6,6 +6,7 @@ from django.core.management import call_command
 
 from config.settings import normalize_database_url, postgres_database_from_url
 
+from .football import fixture_to_market
 from .models import Activity, Payment, Prediction, Wallet
 
 
@@ -61,6 +62,37 @@ class PaymentApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["receiverAddress"], RECEIVER)
         self.assertEqual(response.json()["chainId"], 11155111)
+
+    def test_markets_returns_world_cup_markets(self):
+        response = self.client.get("/api/payments/markets/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("markets", body)
+        self.assertGreaterEqual(len(body["markets"]), 1)
+        self.assertIn("odds", body["markets"][0])
+
+    def test_fixture_to_market_maps_real_api_fixture(self):
+        market = fixture_to_market(
+            {
+                "fixture": {
+                    "id": 123,
+                    "date": "2026-06-11T20:00:00+00:00",
+                    "venue": {"name": "Estadio Azteca"},
+                    "status": {"short": "NS"},
+                },
+                "league": {"round": "Group Stage - 1"},
+                "teams": {
+                    "home": {"name": "Argentina", "code": "ARG"},
+                    "away": {"name": "France", "code": "FRA"},
+                },
+            }
+        )
+
+        self.assertEqual(market["match"], "ARG VS FRA")
+        self.assertEqual(market["stage"], "GROUP STAGE - 1")
+        self.assertEqual(market["status"], "NS")
+        self.assertEqual(market["isoDate"], "2026-06-11T20:00:00+00:00")
 
     def test_wallet_connection_upserts_wallet_and_activity(self):
         response = self.post_json(

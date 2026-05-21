@@ -9,7 +9,7 @@ function normalizeApiBase(value) {
 
 const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE);
 
-const markets = [
+const fallbackMarkets = [
   {
     match: "ARG VS FRA",
     stage: "QUARTER FINAL",
@@ -178,6 +178,8 @@ export default function App() {
   const [myBets, setMyBets] = useState([]);
   const [walletLinksOpen, setWalletLinksOpen] = useState(false);
   const [preferredMobileWallet, setPreferredMobileWallet] = useState("metamask");
+  const [marketList, setMarketList] = useState(fallbackMarkets);
+  const [marketSource, setMarketSource] = useState("fallback");
 
   const ethereum = typeof window !== "undefined" ? window.ethereum : null;
   const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
@@ -196,6 +198,17 @@ export default function App() {
 
   useEffect(() => {
     api("/payments/config/").then(setConfig).catch((error) => setMessage(error.message));
+  }, []);
+
+  useEffect(() => {
+    api("/payments/markets/")
+      .then((data) => {
+        if (Array.isArray(data.markets) && data.markets.length) {
+          setMarketList(data.markets);
+          setMarketSource(data.source || "api");
+        }
+      })
+      .catch((error) => setMessage(`Football API unavailable: ${error.message}`));
   }, []);
 
   useEffect(() => {
@@ -410,7 +423,7 @@ export default function App() {
 
   return (
     <>
-      <Ticker />
+      <Ticker markets={marketList} />
       <nav>
         <div className="nav-inner">
           <div className="logo">FWC26 <span className="slash">/</span> <span>DAPP</span></div>
@@ -455,7 +468,7 @@ export default function App() {
 
       <div className="layout">
         <main>
-          {tab === "markets" && <Markets bets={bets} onAddBet={addBet} />}
+          {tab === "markets" && <LiveMarkets markets={marketList} source={marketSource} bets={bets} onAddBet={addBet} />}
           {tab === "mybets" && <MyBets myBets={myBets} />}
           {tab === "leaderboard" && <Leaderboard />}
         </main>
@@ -515,7 +528,7 @@ export default function App() {
   );
 }
 
-function Ticker() {
+function Ticker({ markets }) {
   const items = ["ARG VS FRA — ARG 2.10 ▲", "BRA VS ESP — ESP 2.90 ▼", "GER VS POR — DRAW 3.80 ▲", "ENG VS NED — ENG 1.95 ▼", "TOTAL POOL: 1,420.69 ETH"];
   return <div className="ticker-bar"><div className="ticker-label">⚽ LIVE ODDS</div><div className="ticker-mask"><div className="ticker-track">{[...items, ...items, ...items].map((item, i) => <span key={`${item}-${i}`}>{item}</span>)}</div></div></div>;
 }
@@ -533,8 +546,34 @@ function Stat({ label, value, tone = "", sub }) {
   return <div className="stat-block"><div className="stat-label">{label}</div><div className={`stat-value ${tone}`}>{value}</div><div className="stat-sub">{sub}</div></div>;
 }
 
+function marketIsToday(market) {
+  if (!market.isoDate) return false;
+  const date = new Date(market.isoDate);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.toDateString() === new Date().toDateString();
+}
+
+function marketIsUpcoming(market) {
+  if (!market.isoDate) return true;
+  const date = new Date(market.isoDate);
+  if (Number.isNaN(date.getTime())) return true;
+  return date.getTime() >= Date.now() && !["FT", "AET", "PEN"].includes(market.status);
+}
+
+function LiveMarkets({ markets, source, bets, onAddBet }) {
+  const [filter, setFilter] = useState("all");
+  const shownMarkets = markets.filter((market) => {
+    if (filter === "today") return marketIsToday(market);
+    if (filter === "upcoming") return marketIsUpcoming(market);
+    return true;
+  });
+  const visibleMarkets = shownMarkets.length ? shownMarkets : markets;
+
+  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>LIVE MARKETS <span className="badge">{source === "api-football" ? "REAL" : "DEMO"}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div><div className="matches-grid">{visibleMarkets.map((market) => <MatchCard key={`${market.match}-${market.matchNo}`} market={market} bets={bets} onAddBet={onAddBet} />)}</div></div>;
+}
+
 function Markets({ bets, onAddBet }) {
-  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>LIVE MARKETS <span className="badge">QF</span></div><div className="filter-tabs"><button className="filter-tab active">ALL</button><button className="filter-tab">TODAY</button><button className="filter-tab">UPCOMING</button></div></div><div className="matches-grid">{markets.map((market) => <MatchCard key={market.match} market={market} bets={bets} onAddBet={onAddBet} />)}</div></div>;
+  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>LIVE MARKETS <span className="badge">QF</span></div><div className="filter-tabs"><button className="filter-tab active">ALL</button><button className="filter-tab">TODAY</button><button className="filter-tab">UPCOMING</button></div></div><div className="matches-grid">{fallbackMarkets.map((market) => <MatchCard key={market.match} market={market} bets={bets} onAddBet={onAddBet} />)}</div></div>;
 }
 
 function MatchCard({ market, bets, onAddBet }) {

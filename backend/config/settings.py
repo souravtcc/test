@@ -139,6 +139,12 @@ if CHAIN_ID == 1 and "sepolia.infura.io" in RPC_URL:
     RPC_URL = RPC_URL.replace("sepolia.infura.io", "mainnet.infura.io")
 CONFIRMATION_BLOCKS = int(os.environ.get("CONFIRMATION_BLOCKS", "1"))
 
+FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY", "")
+FOOTBALL_API_BASE = os.environ.get("FOOTBALL_API_BASE", "https://v3.football.api-sports.io")
+FOOTBALL_API_LEAGUE_ID = int(os.environ.get("FOOTBALL_API_LEAGUE_ID", "1"))
+FOOTBALL_API_SEASON = int(os.environ.get("FOOTBALL_API_SEASON", "2026"))
+FOOTBALL_API_TIMEOUT = int(os.environ.get("FOOTBALL_API_TIMEOUT", "8"))
+
 
 class CorsMiddleware:
     def __init__(self, get_response):

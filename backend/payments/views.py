@@ -11,6 +11,7 @@ except ImportError:
     Web3 = None
 
 from .models import Activity, Payment, Prediction, Wallet
+from .football import fetch_world_cup_markets
 
 
 def _is_address(value):
@@ -153,6 +154,10 @@ def payment_config(_request):
             "confirmationBlocks": settings.CONFIRMATION_BLOCKS,
         }
     )
+
+
+def football_markets(_request):
+    return JsonResponse(fetch_world_cup_markets())
 
 
 @csrf_exempt

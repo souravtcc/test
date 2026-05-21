@@ -5,6 +5,7 @@ from . import views
 
 urlpatterns = [
     path("config/", views.payment_config),
+    path("markets/", views.football_markets),
     path("dashboard/", views.dashboard),
     path("wallets/connect/", views.connect_wallet),
     path("create/", views.create_payment),
