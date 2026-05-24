@@ -626,6 +626,22 @@ export default function App() {
         const paymentAsset = created.paymentAsset || (selectedToken?.native ? "ETH" : config?.paymentAsset);
         const tokenDecimals = created.tokenDecimals || config?.tokenDecimals || 18;
         const paymentTokenSymbol = created.tokenSymbol || paymentSymbol;
+        const stakeValueWei = ethers.parseEther(bet.amountEth);
+        let nativeTransferGasLimit = 21000n;
+        if (paymentAsset !== "ERC20") {
+          const feeData = await browserProvider.getFeeData();
+          nativeTransferGasLimit = await browserProvider.estimateGas({
+            from: activeAddress,
+            to: created.receiverAddress,
+            value: stakeValueWei,
+          }).catch(() => 21000n);
+          const gasPrice = feeData.maxFeePerGas || feeData.gasPrice || 0n;
+          const estimatedGasWei = nativeTransferGasLimit * gasPrice;
+          if (gasBalanceWei < stakeValueWei + estimatedGasWei) {
+            const maxStakeWei = gasBalanceWei > estimatedGasWei ? gasBalanceWei - estimatedGasWei : 0n;
+            throw new Error(`Insufficient ETH for stake plus gas. Try ${formatDisplayAmount(ethers.formatEther(maxStakeWei), 6)} ETH or lower.`);
+          }
+        }
         const tx = paymentAsset === "ERC20"
           ? await new ethers.Contract(
             created.tokenAddress || config.tokenAddress,
@@ -634,7 +650,8 @@ export default function App() {
           ).transfer(created.receiverAddress, ethers.parseUnits(bet.amountEth, tokenDecimals))
           : await signer.sendTransaction({
             to: created.receiverAddress,
-            value: ethers.parseEther(bet.amountEth),
+            value: stakeValueWei,
+            gasLimit: nativeTransferGasLimit,
           });
         await refreshWalletBalances(activeAddress, providerForTx);
 
