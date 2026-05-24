@@ -61,6 +61,13 @@ def _supported_tokens():
 
 def _selected_token(symbol=None):
     token_symbol = str(symbol or settings.PAYMENT_TOKEN_SYMBOL).strip().upper()
+    if token_symbol == "ETH":
+        return {
+            "symbol": "ETH",
+            "address": "",
+            "decimals": 18,
+            "minAmount": "0",
+        }
     return settings.PAYMENT_TOKENS_BY_SYMBOL.get(token_symbol)
 
 
@@ -70,6 +77,10 @@ def _payment_token(payment):
         "address": payment.token_address or settings.PAYMENT_TOKEN_ADDRESS,
         "decimals": payment.token_decimals or settings.PAYMENT_TOKEN_DECIMALS,
     }
+
+
+def _payment_asset(payment):
+    return "ETH" if (payment.token_symbol or "").upper() == "ETH" or not payment.token_address else "ERC20"
 
 
 def _verify_erc20_transfer(web3, receipt, tx, payment, required_units):
@@ -122,7 +133,7 @@ def _payment_json(payment):
         "amountToken": str(payment.amount_eth),
         "chainId": payment.chain_id,
         "receiverAddress": payment.receiver_address,
-        "paymentAsset": settings.PAYMENT_ASSET,
+        "paymentAsset": _payment_asset(payment),
         "tokenAddress": payment_token["address"],
         "tokenSymbol": payment_token["symbol"],
         "tokenDecimals": payment_token["decimals"],
@@ -198,7 +209,8 @@ def _verify_on_chain(payment):
     receipt = web3.eth.get_transaction_receipt(payment.tx_hash)
     tx = web3.eth.get_transaction(payment.tx_hash)
 
-    if settings.PAYMENT_ASSET == "ERC20":
+    payment_asset = _payment_asset(payment)
+    if payment_asset == "ERC20":
         required_units = int(payment.amount_eth * (Decimal(10) ** payment.token_decimals))
     else:
         required_units = web3.to_wei(payment.amount_eth, "ether")
@@ -209,7 +221,7 @@ def _verify_on_chain(payment):
     errors = []
     if receipt.status != 1:
         errors.append("Transaction reverted.")
-    if settings.PAYMENT_ASSET == "ERC20":
+    if payment_asset == "ERC20":
         errors.extend(_verify_erc20_transfer(web3, receipt, tx, payment, required_units))
     else:
         if Web3.to_checksum_address(tx.get("to")) != receiver:
@@ -254,6 +266,7 @@ def payment_config(_request):
             "chainId": settings.CHAIN_ID,
             "confirmationBlocks": settings.CONFIRMATION_BLOCKS,
             "paymentAsset": settings.PAYMENT_ASSET,
+            "defaultPaymentSymbol": "ETH",
             "tokenAddress": settings.PAYMENT_TOKEN_ADDRESS,
             "tokenSymbol": settings.PAYMENT_TOKEN_SYMBOL,
             "tokenDecimals": settings.PAYMENT_TOKEN_DECIMALS,
@@ -321,7 +334,9 @@ def create_payment(request):
     if not _is_address(receiver):
         return _bad_request("Server receiver wallet is not configured.")
     selected_token = _selected_token(data.get("tokenSymbol"))
-    if settings.PAYMENT_ASSET == "ERC20":
+    if selected_token and selected_token["symbol"] == "ETH":
+        pass
+    elif settings.PAYMENT_ASSET == "ERC20":
         if not selected_token:
             return _bad_request("Unsupported ERC20 token selected.")
         if not _is_address(selected_token["address"]):

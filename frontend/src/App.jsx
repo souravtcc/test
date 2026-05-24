@@ -137,19 +137,41 @@ function requestedWalletName(preferredWallet) {
   return preferredWallet === "trust" ? "Trust Wallet" : "MetaMask";
 }
 
-function walletProviderMatches(provider, preferredWallet) {
+function walletProviderEntryProvider(entry) {
+  return entry?.provider || entry;
+}
+
+function walletProviderEntryInfo(entry) {
+  return entry?.provider ? entry.info || {} : {};
+}
+
+function walletProviderMatches(entry, preferredWallet) {
+  const provider = walletProviderEntryProvider(entry);
+  const info = walletProviderEntryInfo(entry);
+  const providerName = `${info.name || ""} ${info.rdns || ""}`.toLowerCase();
   if (!provider) return false;
-  if (preferredWallet === "trust") return Boolean(provider.isTrust || provider.isTrustWallet);
-  if (preferredWallet === "metamask") return Boolean(provider.isMetaMask);
+  if (preferredWallet === "trust") {
+    return Boolean(provider.isTrust || provider.isTrustWallet || providerName.includes("trust"));
+  }
+  if (preferredWallet === "metamask") {
+    return Boolean((provider.isMetaMask && !provider.isTrust && !provider.isTrustWallet) || providerName.includes("metamask"));
+  }
   return true;
 }
 
-function findInjectedWalletProvider(ethereum, preferredWallet) {
-  if (!ethereum) return null;
-  const providers = Array.isArray(ethereum.providers) && ethereum.providers.length
+function findInjectedWalletProvider(ethereum, preferredWallet, discoveredProviders = []) {
+  const providers = Array.isArray(ethereum?.providers) && ethereum.providers.length
     ? ethereum.providers
-    : [ethereum];
-  return providers.find((provider) => walletProviderMatches(provider, preferredWallet)) || null;
+    : ethereum
+      ? [ethereum]
+      : [];
+  const candidates = [...discoveredProviders, ...providers];
+  const uniqueCandidates = candidates.filter((entry, index) => {
+    const provider = walletProviderEntryProvider(entry);
+    return provider && candidates.findIndex((candidate) => walletProviderEntryProvider(candidate) === provider) === index;
+  });
+  const match = uniqueCandidates.find((entry) => walletProviderMatches(entry, preferredWallet));
+  return walletProviderEntryProvider(match) || null;
 }
 
 function formatDisplayAmount(value, digits = 4) {
@@ -225,6 +247,7 @@ export default function App() {
   const [payment, setPayment] = useState(null);
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
+  const [modalMessage, setModalMessage] = useState("");
   const [toast, setToast] = useState("");
   const [block, setBlock] = useState(22041187);
   const [myBets, setMyBets] = useState([]);
@@ -233,16 +256,24 @@ export default function App() {
   const [marketList, setMarketList] = useState(fallbackMarkets);
   const [marketSource, setMarketSource] = useState("fallback");
   const [selectedTokenSymbol, setSelectedTokenSymbol] = useState("");
+  const [discoveredWalletProviders, setDiscoveredWalletProviders] = useState([]);
+  const [inlineBetSlipMatch, setInlineBetSlipMatch] = useState("");
 
   const ethereum = typeof window !== "undefined" ? window.ethereum : null;
   const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
   const supportedTokens = config?.supportedTokens || [];
-  const selectedToken = supportedTokens.find((token) => token.symbol === selectedTokenSymbol) || supportedTokens[0] || null;
+  const paymentOptions = useMemo(() => {
+    if (!config) return [];
+    const ethOption = { symbol: "ETH", address: "", decimals: 18, minAmount: "0", native: true };
+    if (config.paymentAsset !== "ERC20") return [ethOption];
+    return [ethOption, ...supportedTokens.filter((token) => token.symbol !== "ETH")];
+  }, [config, supportedTokens]);
+  const selectedToken = paymentOptions.find((token) => token.symbol === selectedTokenSymbol) || paymentOptions[0] || null;
   const paymentSymbol = selectedToken?.symbol || config?.tokenSymbol || (config?.paymentAsset === "ERC20" ? "TOKEN" : "ETH");
   const tokenBalanceDecimals = tokenDisplayDecimals(selectedToken);
-  const selectedTokenBalance = selectedToken ? walletTokenBalances[selectedToken.symbol] : "";
+  const selectedTokenBalance = selectedToken?.native ? walletNativeBalance : selectedToken ? walletTokenBalances[selectedToken.symbol] : "";
   const selectedTokenMinAmount = tokenMinAmount(selectedToken);
-  const stakePrefix = config?.paymentAsset === "ERC20" ? paymentSymbol : "ETH";
+  const stakePrefix = paymentSymbol;
   const totalPayout = useMemo(
     () => bets.reduce((sum, bet) => sum + (Number(bet.stake) || 0) * bet.odds, 0),
     [bets],
@@ -255,21 +286,50 @@ export default function App() {
     () => validBets.reduce((sum, bet) => sum + (Number(bet.amountEth) || 0), 0),
     [validBets],
   );
+  const walletTokenBalanceValue = Number(selectedTokenBalance || 0);
+  const walletGasBalanceValue = Number(walletNativeBalance || 0);
+  const modalBlockingMessage = useMemo(() => {
+    if (!validBets.length) return "";
+    const invalidBet = validBets.find((bet) => Number(bet.amountEth) <= 0);
+    if (invalidBet) return "Enter an amount greater than zero for every wager.";
+    if (selectedTokenMinAmount) {
+      const belowMinimumBet = validBets.find((bet) => Number(bet.amountEth) < selectedTokenMinAmount);
+      if (belowMinimumBet) return `Minimum ${paymentSymbol} bet is ${selectedTokenMinAmount}.`;
+    }
+    if (config?.paymentAsset === "ERC20" && !selectedToken?.native && walletAddress && selectedTokenBalance && walletTokenBalanceValue < totalStake) {
+      return `Your wallet has ${selectedTokenBalance} ${paymentSymbol}, but this bet needs ${totalStake.toFixed(4)} ${paymentSymbol}.`;
+    }
+    if (walletAddress && walletNativeBalance && walletGasBalanceValue <= 0) {
+      return "You need ETH in the same wallet for gas fees.";
+    }
+    return "";
+  }, [
+    config?.paymentAsset,
+    paymentSymbol,
+    selectedTokenBalance,
+    selectedTokenMinAmount,
+    totalStake,
+    validBets,
+    walletAddress,
+    walletGasBalanceValue,
+    walletNativeBalance,
+    walletTokenBalanceValue,
+  ]);
 
   useEffect(() => {
     api("/payments/config/")
       .then((data) => {
         setConfig(data);
-        setSelectedTokenSymbol(data.defaultTokenSymbol || data.tokenSymbol || "");
+        setSelectedTokenSymbol(data.defaultPaymentSymbol || "ETH");
       })
       .catch((error) => setMessage(error.message));
   }, []);
 
   useEffect(() => {
-    if (!supportedTokens.length) return;
-    if (supportedTokens.some((token) => token.symbol === selectedTokenSymbol)) return;
-    setSelectedTokenSymbol(config?.defaultTokenSymbol || supportedTokens[0].symbol);
-  }, [config, selectedTokenSymbol, supportedTokens]);
+    if (!paymentOptions.length) return;
+    if (paymentOptions.some((token) => token.symbol === selectedTokenSymbol)) return;
+    setSelectedTokenSymbol(config?.defaultPaymentSymbol || paymentOptions[0].symbol);
+  }, [config, paymentOptions, selectedTokenSymbol]);
 
   useEffect(() => {
     api("/payments/markets/")
@@ -285,6 +345,21 @@ export default function App() {
   useEffect(() => {
     const timer = window.setInterval(() => setBlock((value) => value + 1), 12000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleProvider = (event) => {
+      const detail = event.detail;
+      if (!detail?.provider) return;
+      setDiscoveredWalletProviders((current) => {
+        if (current.some((entry) => entry.provider === detail.provider)) return current;
+        return [...current, detail];
+      });
+    };
+    window.addEventListener("eip6963:announceProvider", handleProvider);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    return () => window.removeEventListener("eip6963:announceProvider", handleProvider);
   }, []);
 
   useEffect(() => {
@@ -377,7 +452,7 @@ export default function App() {
   }
 
   async function connectInjectedWallet(preferredWallet) {
-    const provider = findInjectedWalletProvider(ethereum, preferredWallet);
+    const provider = findInjectedWalletProvider(window.ethereum, preferredWallet, discoveredWalletProviders);
 
     if (!provider) {
       showMobileWalletLinks(preferredWallet);
@@ -419,7 +494,7 @@ export default function App() {
       if (!activeConfig) {
         activeConfig = await api("/payments/config/");
         setConfig(activeConfig);
-        setSelectedTokenSymbol((current) => current || activeConfig.defaultTokenSymbol || activeConfig.tokenSymbol || "");
+        setSelectedTokenSymbol((current) => current || activeConfig.defaultPaymentSymbol || "ETH");
       }
       const chainId = Number(activeConfig?.chainId || 1);
       const provider = await EthereumProvider.init({
@@ -468,6 +543,13 @@ export default function App() {
       if (existing >= 0) return current.map((bet, index) => (index === existing ? next : bet));
       return [...current, next];
     });
+    setInlineBetSlipMatch(market.match);
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches) {
+      window.setTimeout(() => {
+        const selector = `[data-betslip-match="${window.CSS?.escape ? window.CSS.escape(market.match) : market.match.replace(/"/g, '\\"')}"]`;
+        document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 80);
+    }
   }
 
   function updateStake(index, stake) {
@@ -477,6 +559,7 @@ export default function App() {
   async function payNow() {
     try {
       if (!validBets.length) return;
+      setModalMessage("");
       const invalidBet = validBets.find((bet) => Number(bet.amountEth) <= 0);
       if (invalidBet) throw new Error("Enter an amount greater than zero for every wager.");
       const belowMinimumBet = selectedTokenMinAmount
@@ -489,6 +572,7 @@ export default function App() {
       if (tooManyDecimalsBet) throw new Error(`${paymentSymbol} supports up to ${selectedToken.decimals} decimal places.`);
       setStatus("working");
       setMessage(`Preparing ${validBets.length} payment${validBets.length === 1 ? "" : "s"}...`);
+      setModalMessage(`Preparing ${validBets.length} payment${validBets.length === 1 ? "" : "s"}...`);
 
       let providerForTx = activeProvider || ethereum;
       let activeAddress = walletAddress;
@@ -500,11 +584,11 @@ export default function App() {
       }
       if (!activeAddress) throw new Error("Wallet connection is required.");
       if (!providerForTx) throw new Error("Wallet provider is not available. Use QR connect or open in a wallet browser.");
-      if (config?.paymentAsset === "ERC20" && !selectedToken?.symbol) throw new Error("Choose WETH or USDT before placing a bet.");
+      if (config?.paymentAsset === "ERC20" && !selectedToken?.symbol) throw new Error("Choose ETH, WETH, or USDT before placing a bet.");
       await ensureChain(providerForTx);
 
       const browserProvider = new ethers.BrowserProvider(providerForTx);
-      if (config?.paymentAsset === "ERC20") {
+      if (config?.paymentAsset === "ERC20" && !selectedToken?.native) {
         const requiredTokenUnits = validBets.reduce(
           (sum, bet) => sum + ethers.parseUnits(bet.amountEth, selectedToken.decimals || 18),
           0n,
@@ -523,6 +607,7 @@ export default function App() {
 
       for (const [index, bet] of validBets.entries()) {
         setMessage(`Creating wager ${index + 1} of ${validBets.length}: ${bet.pick}.`);
+        setModalMessage(`Creating wager ${index + 1} of ${validBets.length}: ${bet.pick}.`);
         const created = await api("/payments/create/", {
           method: "POST",
           body: JSON.stringify({
@@ -537,7 +622,8 @@ export default function App() {
         setPayment(created);
 
         setMessage(`Confirm wager ${index + 1} of ${validBets.length} in your wallet.`);
-        const paymentAsset = created.paymentAsset || config?.paymentAsset;
+        setModalMessage(`Confirm wager ${index + 1} of ${validBets.length} in your wallet.`);
+        const paymentAsset = created.paymentAsset || (selectedToken?.native ? "ETH" : config?.paymentAsset);
         const tokenDecimals = created.tokenDecimals || config?.tokenDecimals || 18;
         const paymentTokenSymbol = created.tokenSymbol || paymentSymbol;
         const tx = paymentAsset === "ERC20"
@@ -554,6 +640,7 @@ export default function App() {
 
         setStatus("submitted");
         setMessage(`Transaction ${index + 1} sent. Waiting for backend verification...`);
+        setModalMessage(`Transaction ${index + 1} sent. Waiting for backend verification...`);
         const submitted = await api(`/payments/${created.id}/submit/`, {
           method: "POST",
           body: JSON.stringify({ txHash: tx.hash }),
@@ -572,13 +659,42 @@ export default function App() {
       setMyBets((current) => [...submittedBets.reverse(), ...current]);
       setBets([]);
       setModalOpen(false);
+      setModalMessage("");
       setMessage(`${submittedBets.length} wager${submittedBets.length === 1 ? "" : "s"} submitted on-chain.`);
       showToast(`✓  ${submittedBets.length} PREDICTION${submittedBets.length === 1 ? "" : "S"} SUBMITTED ON-CHAIN!`);
     } catch (error) {
       setStatus("failed");
-      setMessage(error.shortMessage || error.message);
+      const errorMessage = error.shortMessage || error.message;
+      setMessage(errorMessage);
+      setModalMessage(errorMessage);
     }
   }
+
+  const betSlipProps = {
+    bets,
+    totalPayout,
+    totalStake,
+    paymentSymbol,
+    receiverAddress: config?.receiverAddress || "",
+    supportedTokens: paymentOptions,
+    selectedTokenSymbol,
+    setSelectedTokenSymbol,
+    walletTokenBalances: { ETH: walletNativeBalance, ...walletTokenBalances },
+    selectedTokenMinAmount,
+    stakePrefix,
+    updateStake,
+    removeBet: (index) => setBets((current) => current.filter((_, i) => i !== index)),
+    clearSlip: () => {
+      setBets([]);
+      setInlineBetSlipMatch("");
+    },
+    openConfirm: () => {
+      if (!bets.length) return;
+      setStatus("idle");
+      setModalMessage("");
+      setModalOpen(true);
+    },
+  };
 
   return (
     <>
@@ -605,6 +721,8 @@ export default function App() {
         </div>
       </nav>
 
+      <StatusBanner message={message} status={status} walletAddress={walletAddress} walletName={walletName} />
+
       {walletLinksOpen && (
         <div className="wallet-fallback">
           <div>
@@ -628,28 +746,23 @@ export default function App() {
 
       <div className="layout">
         <main>
-          {tab === "markets" && <LiveMarkets markets={marketList} source={marketSource} bets={bets} onAddBet={addBet} />}
+          {tab === "markets" && (
+            <LiveMarkets
+              markets={marketList}
+              source={marketSource}
+              bets={bets}
+              onAddBet={addBet}
+              inlineBetSlipMatch={inlineBetSlipMatch}
+              renderInlineBetSlip={() => <BetSlip {...betSlipProps} />}
+            />
+          )}
           {tab === "mybets" && <MyBets myBets={myBets} />}
           {tab === "leaderboard" && <Leaderboard />}
         </main>
         <aside className="sidebar">
-          <BetSlip
-            bets={bets}
-            totalPayout={totalPayout}
-            totalStake={totalStake}
-            paymentSymbol={paymentSymbol}
-            receiverAddress={config?.receiverAddress || ""}
-            supportedTokens={supportedTokens}
-            selectedTokenSymbol={selectedTokenSymbol}
-            setSelectedTokenSymbol={setSelectedTokenSymbol}
-            walletTokenBalances={walletTokenBalances}
-            selectedTokenMinAmount={selectedTokenMinAmount}
-            stakePrefix={stakePrefix}
-            updateStake={updateStake}
-            removeBet={(index) => setBets((current) => current.filter((_, i) => i !== index))}
-            clearSlip={() => setBets([])}
-            openConfirm={() => bets.length && setModalOpen(true)}
-          />
+          <div className="betslip-anchor desktop-betslip">
+            <BetSlip {...betSlipProps} />
+          </div>
           <LeaderboardMini />
           <ActivityFeed message={message} payment={payment} />
         </aside>
@@ -686,7 +799,12 @@ export default function App() {
               <div className="modal-helper-copy">
                 Minimum {paymentSymbol} bet is {selectedTokenMinAmount || "greater than 0"}. Receiver {config?.receiverAddress ? shorten(config.receiverAddress) : "wallet"} will receive {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.
               </div>
-              <button className="modal-confirm-btn" disabled={status === "working"} onClick={payNow}>
+              {(modalMessage || modalBlockingMessage) && (
+                <div className={`modal-status ${modalMessage && status === "failed" ? "error" : ""}`}>
+                  {modalMessage || modalBlockingMessage}
+                </div>
+              )}
+              <button className="modal-confirm-btn" disabled={status === "working" || Boolean(modalBlockingMessage)} onClick={payNow}>
                 <span>{status === "working" ? "CONFIRMING ON-CHAIN..." : `⚡ CONFIRM ${validBets.length} WALLET PAYMENT${validBets.length === 1 ? "" : "S"}`}</span>
                 {status === "working" && <div className="spinner visible"></div>}
               </button>
@@ -703,6 +821,19 @@ export default function App() {
 function Ticker({ markets }) {
   const items = ["ARG VS FRA — ARG 2.10 ▲", "BRA VS ESP — ESP 2.90 ▼", "GER VS POR — DRAW 3.80 ▲", "ENG VS NED — ENG 1.95 ▼", "TOTAL POOL: 1,420.69 ETH"];
   return <div className="ticker-bar"><div className="ticker-label">⚽ LIVE ODDS</div><div className="ticker-mask"><div className="ticker-track">{[...items, ...items, ...items].map((item, i) => <span key={`${item}-${i}`}>{item}</span>)}</div></div></div>;
+}
+
+function StatusBanner({ message, status, walletAddress, walletName }) {
+  const fallback = walletAddress ? `${walletName || "Wallet"} connected: ${shorten(walletAddress)}` : "Connect wallet to place a real on-chain bet.";
+  const text = message || fallback;
+  const tone = status === "failed"
+    ? "error"
+    : status === "working" || status === "submitted"
+      ? "working"
+      : walletAddress
+        ? "success"
+        : "";
+  return <div className={`top-status ${tone}`}><span className="top-status-dot"></span><span>{text}</span></div>;
 }
 
 function HeroStats() {
@@ -733,7 +864,7 @@ function marketIsUpcoming(market) {
   return date.getTime() >= Date.now() && !["FT", "AET", "PEN", "FINISHED"].includes(status);
 }
 
-function LiveMarkets({ markets, source, bets, onAddBet }) {
+function LiveMarkets({ markets, source, bets, onAddBet, inlineBetSlipMatch, renderInlineBetSlip }) {
   const [filter, setFilter] = useState("all");
   const shownMarkets = markets.filter((market) => {
     if (filter === "today") return marketIsToday(market);
@@ -743,7 +874,7 @@ function LiveMarkets({ markets, source, bets, onAddBet }) {
   const title = filter === "upcoming" ? "UPCOMING MARKETS" : filter === "today" ? "TODAY'S MARKETS" : "LIVE MARKETS";
   const badge = source === "fallback" ? "DEMO" : "REAL";
 
-  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>{title} <span className="badge">{badge}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div>{shownMarkets.length ? <div className="matches-grid">{shownMarkets.map((market) => <MatchCard key={`${market.match}-${market.matchNo}`} market={market} bets={bets} onAddBet={onAddBet} />)}</div> : <div className="empty-table">NO {filter.toUpperCase()} MATCHES AVAILABLE YET.</div>}</div>;
+  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>{title} <span className="badge">{badge}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div>{shownMarkets.length ? <div className="matches-grid">{shownMarkets.map((market) => <React.Fragment key={`${market.match}-${market.matchNo}`}><MatchCard market={market} bets={bets} onAddBet={onAddBet} />{inlineBetSlipMatch === market.match && <div className="mobile-betslip-slot" data-betslip-match={market.match}>{renderInlineBetSlip()}</div>}</React.Fragment>)}</div> : <div className="empty-table">NO {filter.toUpperCase()} MATCHES AVAILABLE YET.</div>}</div>;
 }
 
 function Markets({ bets, onAddBet }) {
@@ -787,7 +918,7 @@ function BetSlip({
   clearSlip,
   openConfirm,
 }) {
-  return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div><div className="token-switcher"><div className="token-switcher-label">PAY WITH ERC20</div><div className="token-switcher-options">{supportedTokens.map((token) => <button key={token.symbol} className={`token-chip ${selectedTokenSymbol === token.symbol ? "active" : ""}`} onClick={() => setSelectedTokenSymbol(token.symbol)}><span>{token.symbol}</span><strong>{walletTokenBalances[token.symbol] || formatDisplayAmount(0, tokenDisplayDecimals(token))}</strong></button>)}</div><div className="token-switcher-copy">Min {selectedTokenMinAmount || "> 0"} {paymentSymbol}. Receiver {receiverAddress ? shorten(receiverAddress) : "wallet"} gets {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.</div></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">{stakePrefix}</div><input className="stake-input" type="number" min={selectedTokenMinAmount || 0} step={selectedTokenMinAmount || 0.001} placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
+  return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div><div className="token-switcher"><div className="token-switcher-label">PAY WITH</div><div className="token-switcher-options">{supportedTokens.map((token) => <button key={token.symbol} className={`token-chip ${selectedTokenSymbol === token.symbol ? "active" : ""}`} onClick={() => setSelectedTokenSymbol(token.symbol)}><span>{token.symbol}</span><strong>{walletTokenBalances[token.symbol] || formatDisplayAmount(0, tokenDisplayDecimals(token))}</strong></button>)}</div><div className="token-switcher-copy">Min {selectedTokenMinAmount || "> 0"} {paymentSymbol}. Receiver {receiverAddress ? shorten(receiverAddress) : "wallet"} gets {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.</div></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">{stakePrefix}</div><input className="stake-input" type="number" min={selectedTokenMinAmount || 0} step={selectedTokenMinAmount || 0.001} placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
 }
 
 function MyBets({ myBets }) {

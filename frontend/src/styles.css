@@ -120,6 +120,32 @@ nav {
 .nav-tabs button.active { background: var(--yellow); color: #000; font-weight: 700; }
 .nav-tabs button:not(.active):hover { color: var(--text); }
 .nav-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.top-status {
+  max-width: 1400px;
+  margin: 10px auto 0;
+  padding: 10px 20px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(22,27,34,0.96);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: "Space Mono", monospace;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.top-status.success { border-color: var(--green); color: var(--green); background: rgba(0,255,135,0.06); }
+.top-status.working { border-color: var(--yellow); color: var(--yellow); background: rgba(232,255,0,0.07); }
+.top-status.error { border-color: var(--red); color: var(--red); background: rgba(255,45,85,0.08); }
+.top-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 14px currentColor;
+  flex-shrink: 0;
+}
 .stat-pill {
   display: flex;
   align-items: center;
@@ -393,6 +419,8 @@ nav {
 
 .sidebar { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 84px; }
 .side-panel { background: var(--card); border: 1px solid var(--border); overflow: hidden; animation: fade-up 0.4s ease both; }
+.betslip-anchor { scroll-margin-top: 16px; }
+.mobile-betslip-slot { display: none; }
 .static-panel { position: static; }
 .side-panel-header {
   padding: 12px 16px;
@@ -532,6 +560,21 @@ nav {
 .modal-payout-val { font-family: "Bebas Neue", sans-serif; font-size: 30px; color: var(--green); }
 .gas-est { font-family: "Space Mono", monospace; font-size: 10px; color: var(--muted); margin-top: 4px; }
 .modal-helper-copy { color: var(--muted); font-size: 8px; line-height: 1.7; margin: -4px 0 16px; }
+.modal-status {
+  border: 1px solid var(--yellow);
+  background: rgba(232,255,0,0.08);
+  color: var(--yellow);
+  font-family: "Space Mono", monospace;
+  font-size: 9px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  margin: -4px 0 14px;
+}
+.modal-status.error {
+  border-color: var(--red);
+  background: rgba(255,59,48,0.08);
+  color: var(--red);
+}
 .modal-confirm-btn { width: 100%; background: var(--yellow); color: #000; border: none; font-family: "Bebas Neue", sans-serif; font-size: 20px; letter-spacing: 0.06em; padding: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.2s; }
 .modal-confirm-btn:hover { background: #fff; }
 .modal-confirm-btn:disabled { opacity: 0.7; }
@@ -565,6 +608,17 @@ nav {
   nav .stat-pill { display: none; }
 }
 @media (max-width: 760px) {
+  .desktop-betslip { display: none; }
+  .mobile-betslip-slot {
+    display: block;
+    margin-top: -2px;
+    margin-bottom: 12px;
+  }
+  .top-status {
+    margin: 8px 12px 0;
+    padding: 9px 12px;
+    font-size: 9px;
+  }
   .nav-inner { align-items: stretch; flex-direction: column; }
   .nav-tabs { display: none; }
   .nav-right { justify-content: stretch; }
