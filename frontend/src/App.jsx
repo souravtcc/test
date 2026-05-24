@@ -535,8 +535,11 @@ export default function App() {
                 <div><div className="modal-payout-label">POTENTIAL PAYOUT</div><div className="modal-payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</div></div>
                 <div style={{ textAlign: "right" }}><div className="modal-payout-label">TOTAL STAKE</div><div className="gas-est">{totalStake.toFixed(4)} {paymentSymbol}</div></div>
               </div>
+              <div className="modal-helper-copy">
+                Connected wallet only selects the sender address. You still need to approve each bet transfer inside MetaMask, Trust Wallet, or WalletConnect.
+              </div>
               <button className="modal-confirm-btn" disabled={status === "working"} onClick={payNow}>
-                <span>{status === "working" ? "CONFIRMING ON-CHAIN..." : `⚡ SIGN ${validBets.length} TRANSACTION${validBets.length === 1 ? "" : "S"}`}</span>
+                <span>{status === "working" ? "CONFIRMING ON-CHAIN..." : `⚡ CONFIRM ${validBets.length} WALLET PAYMENT${validBets.length === 1 ? "" : "S"}`}</span>
                 {status === "working" && <div className="spinner visible"></div>}
               </button>
             </div>
