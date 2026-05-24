@@ -408,6 +408,14 @@ nav {
 .side-panel-header .title { display: flex; align-items: center; gap: 8px; }
 .side-panel-header .count { background: var(--yellow); color: #000; font-size: 8px; padding: 1px 6px; font-weight: 700; }
 .clear-btn { background: none; border: none; color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: 0.1em; }
+.token-switcher { padding: 14px 16px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, rgba(232,255,0,0.06), transparent); }
+.token-switcher-label { font-size: 8px; color: var(--muted); letter-spacing: 0.16em; margin-bottom: 10px; }
+.token-switcher-options { display: flex; gap: 8px; margin-bottom: 10px; }
+.token-chip { background: var(--bg3); border: 1px solid var(--border); color: var(--muted); font-size: 9px; padding: 8px 12px; transition: all 0.15s; display: grid; gap: 4px; min-width: 72px; text-align: left; }
+.token-chip.active { border-color: var(--yellow); color: var(--yellow); box-shadow: 0 0 18px rgba(232,255,0,0.12); }
+.token-chip span { font-weight: 700; }
+.token-chip strong { color: var(--green); font-family: "Space Mono", monospace; font-size: 8px; font-weight: 700; }
+.token-switcher-copy { color: var(--muted); font-size: 8px; line-height: 1.7; }
 .betslip-empty { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 9px; line-height: 2; border-bottom: 1px solid var(--border); }
 .betslip-empty .icon { font-size: 32px; margin-bottom: 10px; opacity: 0.6; }
 .bet-item { padding: 14px 16px; border-bottom: 1px solid var(--border); animation: slide-in 0.2s ease; }
@@ -469,6 +477,7 @@ nav {
 .my-bet-match { font-size: 8px; color: var(--muted); margin-bottom: 3px; }
 .my-bet-pick { font-size: 9px; }
 .my-bet-stake { font-family: "Space Mono", monospace; font-size: 9px; color: var(--muted); white-space: nowrap; }
+.my-bet-payout { font-family: "Space Mono", monospace; font-size: 8px; color: var(--green); white-space: nowrap; }
 .my-bet-right { text-align: right; display: grid; gap: 4px; justify-items: end; }
 .status-badge { font-size: 7px; padding: 3px 7px; border: 1px solid; white-space: nowrap; }
 .status-badge.pending { color: var(--orange); border-color: var(--orange); }

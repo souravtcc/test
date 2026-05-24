@@ -9,6 +9,7 @@ function normalizeApiBase(value) {
 
 const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE);
 const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
   "function transfer(address to, uint256 amount) returns (bool)",
 ];
 
@@ -127,9 +128,48 @@ function shorten(address) {
 
 function detectWallet(provider) {
   if (!provider) return "No wallet";
-  if (provider.isTrust) return "Trust Wallet";
+  if (provider.isTrust || provider.isTrustWallet) return "Trust Wallet";
   if (provider.isMetaMask) return "MetaMask";
   return "Injected Wallet";
+}
+
+function requestedWalletName(preferredWallet) {
+  return preferredWallet === "trust" ? "Trust Wallet" : "MetaMask";
+}
+
+function walletProviderMatches(provider, preferredWallet) {
+  if (!provider) return false;
+  if (preferredWallet === "trust") return Boolean(provider.isTrust || provider.isTrustWallet);
+  if (preferredWallet === "metamask") return Boolean(provider.isMetaMask);
+  return true;
+}
+
+function findInjectedWalletProvider(ethereum, preferredWallet) {
+  if (!ethereum) return null;
+  const providers = Array.isArray(ethereum.providers) && ethereum.providers.length
+    ? ethereum.providers
+    : [ethereum];
+  return providers.find((provider) => walletProviderMatches(provider, preferredWallet)) || null;
+}
+
+function formatDisplayAmount(value, digits = 4) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return Number(0).toFixed(digits);
+  return numeric.toFixed(digits);
+}
+
+function tokenDisplayDecimals(token) {
+  return token?.decimals && token.decimals < 4 ? token.decimals : 4;
+}
+
+function tokenMinAmount(token) {
+  const minAmount = Number(token?.minAmount || 0);
+  return Number.isFinite(minAmount) ? minAmount : 0;
+}
+
+function decimalPlaces(value) {
+  const [, decimals = ""] = String(value || "").split(".");
+  return decimals.length;
 }
 
 function currentDappUrl() {
@@ -176,7 +216,8 @@ export default function App() {
   const [config, setConfig] = useState(null);
   const [walletAddress, setWalletAddress] = useState("");
   const [walletName, setWalletName] = useState("");
-  const [walletBalance, setWalletBalance] = useState("");
+  const [walletNativeBalance, setWalletNativeBalance] = useState("");
+  const [walletTokenBalances, setWalletTokenBalances] = useState({});
   const [activeProvider, setActiveProvider] = useState(null);
   const [tab, setTab] = useState("markets");
   const [bets, setBets] = useState([]);
@@ -191,10 +232,17 @@ export default function App() {
   const [preferredMobileWallet, setPreferredMobileWallet] = useState("metamask");
   const [marketList, setMarketList] = useState(fallbackMarkets);
   const [marketSource, setMarketSource] = useState("fallback");
+  const [selectedTokenSymbol, setSelectedTokenSymbol] = useState("");
 
   const ethereum = typeof window !== "undefined" ? window.ethereum : null;
   const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
-  const paymentSymbol = config?.tokenSymbol || (config?.paymentAsset === "ERC20" ? "TOKEN" : "ETH");
+  const supportedTokens = config?.supportedTokens || [];
+  const selectedToken = supportedTokens.find((token) => token.symbol === selectedTokenSymbol) || supportedTokens[0] || null;
+  const paymentSymbol = selectedToken?.symbol || config?.tokenSymbol || (config?.paymentAsset === "ERC20" ? "TOKEN" : "ETH");
+  const tokenBalanceDecimals = tokenDisplayDecimals(selectedToken);
+  const selectedTokenBalance = selectedToken ? walletTokenBalances[selectedToken.symbol] : "";
+  const selectedTokenMinAmount = tokenMinAmount(selectedToken);
+  const stakePrefix = config?.paymentAsset === "ERC20" ? paymentSymbol : "ETH";
   const totalPayout = useMemo(
     () => bets.reduce((sum, bet) => sum + (Number(bet.stake) || 0) * bet.odds, 0),
     [bets],
@@ -209,8 +257,19 @@ export default function App() {
   );
 
   useEffect(() => {
-    api("/payments/config/").then(setConfig).catch((error) => setMessage(error.message));
+    api("/payments/config/")
+      .then((data) => {
+        setConfig(data);
+        setSelectedTokenSymbol(data.defaultTokenSymbol || data.tokenSymbol || "");
+      })
+      .catch((error) => setMessage(error.message));
   }, []);
+
+  useEffect(() => {
+    if (!supportedTokens.length) return;
+    if (supportedTokens.some((token) => token.symbol === selectedTokenSymbol)) return;
+    setSelectedTokenSymbol(config?.defaultTokenSymbol || supportedTokens[0].symbol);
+  }, [config, selectedTokenSymbol, supportedTokens]);
 
   useEffect(() => {
     api("/payments/markets/")
@@ -237,7 +296,7 @@ export default function App() {
       setActiveProvider(ethereum);
       setWalletAddress(accounts[0]);
       setWalletName(detectWallet(ethereum));
-      await refreshWalletBalance(accounts[0], ethereum);
+      await refreshWalletBalances(accounts[0], ethereum);
       saveWalletConnection(accounts[0], detectWallet(ethereum), Number(network.chainId));
     }).catch(() => {});
   }, [ethereum]);
@@ -247,11 +306,14 @@ export default function App() {
     const handleAccountsChanged = async (accounts) => {
       const nextAddress = accounts?.[0] || "";
       setWalletAddress(nextAddress);
-      if (nextAddress) await refreshWalletBalance(nextAddress, activeProvider);
-      else setWalletBalance("");
+      if (nextAddress) await refreshWalletBalances(nextAddress, activeProvider);
+      else {
+        setWalletNativeBalance("");
+        setWalletTokenBalances({});
+      }
     };
     const handleChainChanged = () => {
-      if (walletAddress) refreshWalletBalance(walletAddress, activeProvider);
+      if (walletAddress) refreshWalletBalances(walletAddress, activeProvider);
     };
     activeProvider.on("accountsChanged", handleAccountsChanged);
     activeProvider.on("chainChanged", handleChainChanged);
@@ -261,19 +323,39 @@ export default function App() {
     };
   }, [activeProvider, walletAddress]);
 
+  useEffect(() => {
+    if (!walletAddress || !activeProvider) return;
+    refreshWalletBalances(walletAddress, activeProvider);
+  }, [activeProvider, selectedTokenSymbol, walletAddress]);
+
   function showToast(text) {
     setToast(text);
     window.setTimeout(() => setToast(""), 3500);
   }
 
-  async function refreshWalletBalance(address, provider) {
+  async function refreshWalletBalances(address, provider) {
     if (!address || !provider) return;
     try {
       const browserProvider = new ethers.BrowserProvider(provider);
       const balanceWei = await browserProvider.getBalance(address);
-      setWalletBalance(Number(ethers.formatEther(balanceWei)).toFixed(4));
+      setWalletNativeBalance(formatDisplayAmount(ethers.formatEther(balanceWei)));
+      if (config?.paymentAsset === "ERC20" && supportedTokens.length) {
+        const balances = await Promise.all(supportedTokens.map(async (token) => {
+          if (!token.address) return [token.symbol, formatDisplayAmount(0, tokenDisplayDecimals(token))];
+          const tokenContract = new ethers.Contract(token.address, ERC20_ABI, browserProvider);
+          const tokenBalance = await tokenContract.balanceOf(address);
+          return [
+            token.symbol,
+            formatDisplayAmount(ethers.formatUnits(tokenBalance, token.decimals || 18), tokenDisplayDecimals(token)),
+          ];
+        }));
+        setWalletTokenBalances(Object.fromEntries(balances));
+      } else {
+        setWalletTokenBalances({});
+      }
     } catch {
-      setWalletBalance("");
+      setWalletNativeBalance("");
+      setWalletTokenBalances({});
     }
   }
 
@@ -281,12 +363,12 @@ export default function App() {
     setPreferredMobileWallet(preferredWallet);
     if (isMobileBrowser()) {
       setWalletLinksOpen(false);
-      setMessage(`Opening ${preferredWallet === "trust" ? "Trust Wallet" : "MetaMask"}...`);
+      setMessage(`Opening ${requestedWalletName(preferredWallet)}...`);
       openWalletApp(preferredWallet);
       return;
     }
     setWalletLinksOpen(true);
-    setMessage("Open this site inside MetaMask or Trust Wallet, then tap connect again.");
+    setMessage(`${requestedWalletName(preferredWallet)} provider not found. Open this site inside that wallet, or use WalletConnect QR.`);
   }
 
   function openWalletApp(wallet) {
@@ -295,29 +377,36 @@ export default function App() {
   }
 
   async function connectInjectedWallet(preferredWallet) {
-    const provider = preferredWallet === "trust" && ethereum?.providers
-      ? ethereum.providers.find((item) => item.isTrust) || ethereum
-      : preferredWallet === "metamask" && ethereum?.providers
-        ? ethereum.providers.find((item) => item.isMetaMask) || ethereum
-      : ethereum;
+    const provider = findInjectedWalletProvider(ethereum, preferredWallet);
 
     if (!provider) {
       showMobileWalletLinks(preferredWallet);
       return null;
     }
 
-    const browserProvider = new ethers.BrowserProvider(provider);
-    const accounts = await browserProvider.send("eth_requestAccounts", []);
-    const network = await browserProvider.getNetwork();
-    const connectedWalletName = preferredWallet === "trust" ? "Trust Wallet" : preferredWallet === "metamask" ? "MetaMask" : detectWallet(provider);
-    setActiveProvider(provider);
-    setWalletAddress(accounts[0]);
-    setWalletName(connectedWalletName);
-    await refreshWalletBalance(accounts[0], provider);
-    setWalletLinksOpen(false);
-    setMessage(`${connectedWalletName} connected.`);
-    saveWalletConnection(accounts[0], connectedWalletName, Number(network.chainId));
-    return { address: accounts[0], provider };
+    try {
+      const browserProvider = new ethers.BrowserProvider(provider, "any");
+      const accounts = await browserProvider.send("eth_requestAccounts", []);
+      if (!accounts?.[0]) throw new Error("No wallet account returned.");
+      const network = await browserProvider.getNetwork();
+      const connectedWalletName = detectWallet(provider);
+      setActiveProvider(provider);
+      setWalletAddress(accounts[0]);
+      setWalletName(connectedWalletName);
+      await refreshWalletBalances(accounts[0], provider);
+      setWalletLinksOpen(false);
+      setMessage(`${connectedWalletName} connected.`);
+      saveWalletConnection(accounts[0], connectedWalletName, Number(network.chainId));
+      return { address: accounts[0], provider };
+    } catch (error) {
+      const rawMessage = error?.shortMessage || error?.message || `${requestedWalletName(preferredWallet)} connection failed.`;
+      if (error?.code === 4001 || /rejected|denied|cancel/i.test(rawMessage)) {
+        setMessage(`${requestedWalletName(preferredWallet)} connection was cancelled.`);
+      } else {
+        setMessage(rawMessage);
+      }
+      return null;
+    }
   }
 
   async function connectWalletConnect() {
@@ -325,23 +414,41 @@ export default function App() {
       setMessage("Add VITE_WALLETCONNECT_PROJECT_ID in frontend .env to enable QR connect.");
       return null;
     }
-    const provider = await EthereumProvider.init({
-      projectId: walletConnectProjectId,
-      chains: [config?.chainId || 11155111],
-      showQrModal: true,
-    });
-    await provider.enable();
-    const browserProvider = new ethers.BrowserProvider(provider);
-    const signer = await browserProvider.getSigner();
-    const network = await browserProvider.getNetwork();
-    const address = await signer.getAddress();
-    setActiveProvider(provider);
-    setWalletAddress(address);
-    setWalletName("WalletConnect");
-    await refreshWalletBalance(address, provider);
-    setMessage("Wallet connected.");
-    saveWalletConnection(address, "WalletConnect", Number(network.chainId));
-    return { address, provider };
+    try {
+      let activeConfig = config;
+      if (!activeConfig) {
+        activeConfig = await api("/payments/config/");
+        setConfig(activeConfig);
+        setSelectedTokenSymbol((current) => current || activeConfig.defaultTokenSymbol || activeConfig.tokenSymbol || "");
+      }
+      const chainId = Number(activeConfig?.chainId || 1);
+      const provider = await EthereumProvider.init({
+        projectId: walletConnectProjectId,
+        chains: [chainId],
+        optionalChains: [chainId],
+        showQrModal: true,
+      });
+      await provider.enable();
+      const browserProvider = new ethers.BrowserProvider(provider);
+      const signer = await browserProvider.getSigner();
+      const network = await browserProvider.getNetwork();
+      const address = await signer.getAddress();
+      setActiveProvider(provider);
+      setWalletAddress(address);
+      setWalletName("WalletConnect");
+      await refreshWalletBalances(address, provider);
+      setMessage("Wallet connected.");
+      saveWalletConnection(address, "WalletConnect", Number(network.chainId));
+      return { address, provider };
+    } catch (error) {
+      const rawMessage = error?.shortMessage || error?.message || "WalletConnect failed.";
+      if (/unsupported chains|chain.*not supported/i.test(rawMessage)) {
+        setMessage("Phone wallet is rejecting the requested chain. Open Ethereum Mainnet in the wallet, then scan the QR again.");
+      } else {
+        setMessage(rawMessage);
+      }
+      return null;
+    }
   }
 
   async function ensureChain(provider = activeProvider || ethereum) {
@@ -372,6 +479,14 @@ export default function App() {
       if (!validBets.length) return;
       const invalidBet = validBets.find((bet) => Number(bet.amountEth) <= 0);
       if (invalidBet) throw new Error("Enter an amount greater than zero for every wager.");
+      const belowMinimumBet = selectedTokenMinAmount
+        ? validBets.find((bet) => Number(bet.amountEth) < selectedTokenMinAmount)
+        : null;
+      if (belowMinimumBet) throw new Error(`Minimum ${paymentSymbol} bet is ${selectedTokenMinAmount}.`);
+      const tooManyDecimalsBet = selectedToken?.decimals
+        ? validBets.find((bet) => decimalPlaces(bet.amountEth) > selectedToken.decimals)
+        : null;
+      if (tooManyDecimalsBet) throw new Error(`${paymentSymbol} supports up to ${selectedToken.decimals} decimal places.`);
       setStatus("working");
       setMessage(`Preparing ${validBets.length} payment${validBets.length === 1 ? "" : "s"}...`);
 
@@ -385,9 +500,24 @@ export default function App() {
       }
       if (!activeAddress) throw new Error("Wallet connection is required.");
       if (!providerForTx) throw new Error("Wallet provider is not available. Use QR connect or open in a wallet browser.");
+      if (config?.paymentAsset === "ERC20" && !selectedToken?.symbol) throw new Error("Choose WETH or USDT before placing a bet.");
       await ensureChain(providerForTx);
 
       const browserProvider = new ethers.BrowserProvider(providerForTx);
+      if (config?.paymentAsset === "ERC20") {
+        const requiredTokenUnits = validBets.reduce(
+          (sum, bet) => sum + ethers.parseUnits(bet.amountEth, selectedToken.decimals || 18),
+          0n,
+        );
+        const tokenContract = new ethers.Contract(selectedToken.address, ERC20_ABI, browserProvider);
+        const walletTokenUnits = await tokenContract.balanceOf(activeAddress);
+        if (walletTokenUnits < requiredTokenUnits) {
+          throw new Error(`Insufficient ${paymentSymbol} balance for this bet.`);
+        }
+      }
+      const gasBalanceWei = await browserProvider.getBalance(activeAddress);
+      if (gasBalanceWei <= 0n) throw new Error("You need ETH in the same wallet for gas fees.");
+
       const signer = await browserProvider.getSigner();
       const submittedBets = [];
 
@@ -398,6 +528,7 @@ export default function App() {
           body: JSON.stringify({
             walletAddress: activeAddress,
             amountEth: bet.amountEth,
+            tokenSymbol: selectedToken?.symbol,
             match: bet.match,
             pick: bet.pick,
             odds: bet.odds,
@@ -408,6 +539,7 @@ export default function App() {
         setMessage(`Confirm wager ${index + 1} of ${validBets.length} in your wallet.`);
         const paymentAsset = created.paymentAsset || config?.paymentAsset;
         const tokenDecimals = created.tokenDecimals || config?.tokenDecimals || 18;
+        const paymentTokenSymbol = created.tokenSymbol || paymentSymbol;
         const tx = paymentAsset === "ERC20"
           ? await new ethers.Contract(
             created.tokenAddress || config.tokenAddress,
@@ -418,7 +550,7 @@ export default function App() {
             to: created.receiverAddress,
             value: ethers.parseEther(bet.amountEth),
           });
-        await refreshWalletBalance(activeAddress, providerForTx);
+        await refreshWalletBalances(activeAddress, providerForTx);
 
         setStatus("submitted");
         setMessage(`Transaction ${index + 1} sent. Waiting for backend verification...`);
@@ -427,7 +559,14 @@ export default function App() {
           body: JSON.stringify({ txHash: tx.hash }),
         });
         setPayment(submitted);
-        submittedBets.push({ ...bet, stake: Number(bet.amountEth), status: submitted.status.toUpperCase(), txHash: tx.hash, symbol: paymentSymbol });
+        submittedBets.push({
+          ...bet,
+          stake: Number(bet.amountEth),
+          status: submitted.status.toUpperCase(),
+          txHash: tx.hash,
+          symbol: paymentTokenSymbol,
+          potentialPayout: Number(submitted.potentialPayoutToken || Number(bet.amountEth) * bet.odds),
+        });
       }
 
       setMyBets((current) => [...submittedBets.reverse(), ...current]);
@@ -458,7 +597,8 @@ export default function App() {
             <button className="wallet-btn" onClick={() => connectInjectedWallet("metamask")}>
               <div className="wallet-dot"></div>{walletAddress ? `${walletName} ${shorten(walletAddress)}` : "METAMASK"}
             </button>
-            {walletAddress && <div className="balance-pill"><span>BAL</span><span className="val">{walletBalance || "0.0000"} ETH</span></div>}
+            {walletAddress && <div className="balance-pill"><span>{paymentSymbol}</span><span className="val">{selectedTokenBalance || formatDisplayAmount(0, tokenBalanceDecimals)} {paymentSymbol}</span></div>}
+            {walletAddress && <div className="balance-pill"><span>GAS</span><span className="val">{walletNativeBalance || formatDisplayAmount(0)} ETH</span></div>}
             <button className="wallet-btn trust" onClick={() => connectInjectedWallet("trust")}>TRUST</button>
             <button className="wallet-btn qr" onClick={connectWalletConnect}>QR</button>
           </div>
@@ -496,7 +636,15 @@ export default function App() {
           <BetSlip
             bets={bets}
             totalPayout={totalPayout}
+            totalStake={totalStake}
             paymentSymbol={paymentSymbol}
+            receiverAddress={config?.receiverAddress || ""}
+            supportedTokens={supportedTokens}
+            selectedTokenSymbol={selectedTokenSymbol}
+            setSelectedTokenSymbol={setSelectedTokenSymbol}
+            walletTokenBalances={walletTokenBalances}
+            selectedTokenMinAmount={selectedTokenMinAmount}
+            stakePrefix={stakePrefix}
             updateStake={updateStake}
             removeBet={(index) => setBets((current) => current.filter((_, i) => i !== index))}
             clearSlip={() => setBets([])}
@@ -527,7 +675,7 @@ export default function App() {
                       <div>{Number(bet.amountEth || 0).toFixed(4)} {paymentSymbol}</div>
                       <div>{bet.odds.toFixed(2)}X</div>
                     </div>
-                    <input className="modal-bet-input" type="number" min="0" step="0.001" value={bet.stake} onChange={(event) => updateStake(index, event.target.value)} />
+                    <input className="modal-bet-input" type="number" min={selectedTokenMinAmount || 0} step={selectedTokenMinAmount || 0.001} value={bet.stake} onChange={(event) => updateStake(index, event.target.value)} />
                   </div>
                 ))}
               </div>
@@ -536,7 +684,7 @@ export default function App() {
                 <div style={{ textAlign: "right" }}><div className="modal-payout-label">TOTAL STAKE</div><div className="gas-est">{totalStake.toFixed(4)} {paymentSymbol}</div></div>
               </div>
               <div className="modal-helper-copy">
-                Connected wallet only selects the sender address. You still need to approve each bet transfer inside MetaMask, Trust Wallet, or WalletConnect.
+                Minimum {paymentSymbol} bet is {selectedTokenMinAmount || "greater than 0"}. Receiver {config?.receiverAddress ? shorten(config.receiverAddress) : "wallet"} will receive {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.
               </div>
               <button className="modal-confirm-btn" disabled={status === "working"} onClick={payNow}>
                 <span>{status === "working" ? "CONFIRMING ON-CHAIN..." : `⚡ CONFIRM ${validBets.length} WALLET PAYMENT${validBets.length === 1 ? "" : "S"}`}</span>
@@ -622,12 +770,28 @@ function Team({ flag, code, name, odds, right = false }) {
   return <div className={`team-side ${right ? "right" : ""}`}><div className="team-flag">{flag}</div><div className="team-info"><div className="team-code">{code}</div><div className="team-full">{name}</div><div className="team-odds">{odds.toFixed(2)}x</div></div></div>;
 }
 
-function BetSlip({ bets, totalPayout, paymentSymbol, updateStake, removeBet, clearSlip, openConfirm }) {
-  return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">Ξ</div><input className="stake-input" type="number" placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} ETH</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
+function BetSlip({
+  bets,
+  totalPayout,
+  totalStake,
+  paymentSymbol,
+  receiverAddress,
+  supportedTokens,
+  selectedTokenSymbol,
+  setSelectedTokenSymbol,
+  walletTokenBalances,
+  selectedTokenMinAmount,
+  stakePrefix,
+  updateStake,
+  removeBet,
+  clearSlip,
+  openConfirm,
+}) {
+  return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div><div className="token-switcher"><div className="token-switcher-label">PAY WITH ERC20</div><div className="token-switcher-options">{supportedTokens.map((token) => <button key={token.symbol} className={`token-chip ${selectedTokenSymbol === token.symbol ? "active" : ""}`} onClick={() => setSelectedTokenSymbol(token.symbol)}><span>{token.symbol}</span><strong>{walletTokenBalances[token.symbol] || formatDisplayAmount(0, tokenDisplayDecimals(token))}</strong></button>)}</div><div className="token-switcher-copy">Min {selectedTokenMinAmount || "> 0"} {paymentSymbol}. Receiver {receiverAddress ? shorten(receiverAddress) : "wallet"} gets {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.</div></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">{stakePrefix}</div><input className="stake-input" type="number" min={selectedTokenMinAmount || 0} step={selectedTokenMinAmount || 0.001} placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
 }
 
 function MyBets({ myBets }) {
-  return <div><div className="section-header"><div className="section-title">MY BETS</div></div><div className="side-panel static-panel"><div className="side-panel-header"><span className="title">ACTIVE POSITIONS</span><span className="count">{myBets.length}</span></div>{!myBets.length ? <div className="empty-table">NO ACTIVE BETS. GO PLACE SOME PREDICTIONS.</div> : myBets.map((bet, i) => <div className="my-bet-row" key={`${bet.match}-${i}`}><div className="my-bet-info"><div className="my-bet-match">{bet.match}</div><div className="my-bet-pick">{bet.pick} · {bet.odds}X</div></div><div className="my-bet-right"><div className="my-bet-stake">{Number(bet.stake).toFixed(3)} ETH</div><div className="status-badge pending">{bet.status}</div></div></div>)}</div></div>;
+  return <div><div className="section-header"><div className="section-title">MY BETS</div></div><div className="side-panel static-panel"><div className="side-panel-header"><span className="title">ACTIVE POSITIONS</span><span className="count">{myBets.length}</span></div>{!myBets.length ? <div className="empty-table">NO ACTIVE BETS. GO PLACE SOME PREDICTIONS.</div> : myBets.map((bet, i) => <div className="my-bet-row" key={`${bet.match}-${i}`}><div className="my-bet-info"><div className="my-bet-match">{bet.match}</div><div className="my-bet-pick">{bet.pick} · {bet.odds}X</div></div><div className="my-bet-right"><div className="my-bet-stake">{Number(bet.stake).toFixed(3)} {bet.symbol || "ETH"}</div><div className="my-bet-payout">WIN PAYOUT {formatDisplayAmount(bet.potentialPayout || Number(bet.stake) * bet.odds, 3)} {bet.symbol || "ETH"}</div><div className="status-badge pending">{bet.status}</div></div></div>)}</div></div>;
 }
 
 function Leaderboard() {
