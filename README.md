@@ -24,8 +24,8 @@ npm run dev
 
 Use `frontend/.env` for Vite frontend config.
 
-## Required Environment
 
+<<<<<<< HEAD
 ```env
 DJANGO_SECRET_KEY=make_any_long_random_secret
 DJANGO_DEBUG=0
@@ -52,3 +52,5 @@ VITE_WALLETCONNECT_PROJECT_ID=3770f1167e86e3c5a1b4e8f323f56813
 ```
 
 `PAYMENT_ASSET=ERC20` makes bets transfer an ERC20 token. By default the app exposes both WETH and USDT on Ethereum mainnet, and the bettor chooses which token to send before confirming the wallet payment.
+=======
+>>>>>>> 39dcfe4003f117f5428f3630af0a2862810b316a
