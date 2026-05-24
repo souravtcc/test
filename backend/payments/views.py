@@ -46,8 +46,35 @@ def _hex_value(value):
     return str(value)
 
 
+def _token_json(token):
+    return {
+        "symbol": token["symbol"],
+        "address": token["address"],
+        "decimals": token["decimals"],
+        "minAmount": token.get("minAmount", "0"),
+    }
+
+
+def _supported_tokens():
+    return [_token_json(token) for token in settings.PAYMENT_TOKENS]
+
+
+def _selected_token(symbol=None):
+    token_symbol = str(symbol or settings.PAYMENT_TOKEN_SYMBOL).strip().upper()
+    return settings.PAYMENT_TOKENS_BY_SYMBOL.get(token_symbol)
+
+
+def _payment_token(payment):
+    return {
+        "symbol": payment.token_symbol or settings.PAYMENT_TOKEN_SYMBOL,
+        "address": payment.token_address or settings.PAYMENT_TOKEN_ADDRESS,
+        "decimals": payment.token_decimals or settings.PAYMENT_TOKEN_DECIMALS,
+    }
+
+
 def _verify_erc20_transfer(web3, receipt, tx, payment, required_units):
-    token = Web3.to_checksum_address(settings.PAYMENT_TOKEN_ADDRESS)
+    payment_token = _payment_token(payment)
+    token = Web3.to_checksum_address(payment_token["address"])
     receiver = Web3.to_checksum_address(payment.receiver_address)
     sender = Web3.to_checksum_address(payment.wallet_address)
     transfer_topic = web3.keccak(text="Transfer(address,address,uint256)").hex()
@@ -74,7 +101,7 @@ def _verify_erc20_transfer(web3, receipt, tx, payment, required_units):
         transferred += int(_hex_value(log.get("data", "0x0")), 16)
 
     if transferred < required_units:
-        errors.append(f"{settings.PAYMENT_TOKEN_SYMBOL} transfer amount is lower than expected.")
+        errors.append(f"{payment_token['symbol']} transfer amount is lower than expected.")
     return errors
 
 
@@ -86,20 +113,23 @@ def _json_body(request):
 
 
 def _payment_json(payment):
+    payment_token = _payment_token(payment)
     return {
         "id": payment.id,
         "predictionId": payment.prediction_id,
         "walletAddress": payment.wallet_address,
         "amountEth": str(payment.amount_eth),
+        "amountToken": str(payment.amount_eth),
         "chainId": payment.chain_id,
         "receiverAddress": payment.receiver_address,
         "paymentAsset": settings.PAYMENT_ASSET,
-        "tokenAddress": settings.PAYMENT_TOKEN_ADDRESS,
-        "tokenSymbol": settings.PAYMENT_TOKEN_SYMBOL,
-        "tokenDecimals": settings.PAYMENT_TOKEN_DECIMALS,
+        "tokenAddress": payment_token["address"],
+        "tokenSymbol": payment_token["symbol"],
+        "tokenDecimals": payment_token["decimals"],
         "match": payment.match,
         "pick": payment.pick,
         "odds": str(payment.odds),
+        "potentialPayoutToken": str(payment.prediction.potential_payout_eth) if payment.prediction else "",
         "txHash": payment.tx_hash,
         "status": payment.status,
         "failureReason": payment.failure_reason,
@@ -114,6 +144,25 @@ def _wallet_json(wallet):
         "chainId": wallet.chain_id,
         "firstSeenAt": wallet.first_seen_at.isoformat(),
         "lastSeenAt": wallet.last_seen_at.isoformat(),
+    }
+
+
+def _prediction_json(prediction):
+    return {
+        "id": prediction.id,
+        "walletAddress": prediction.wallet.address,
+        "match": prediction.match,
+        "pick": prediction.pick,
+        "tokenSymbol": prediction.token_symbol,
+        "tokenAddress": prediction.token_address,
+        "tokenDecimals": prediction.token_decimals,
+        "odds": str(prediction.odds),
+        "stakeEth": str(prediction.stake_eth),
+        "stakeToken": str(prediction.stake_eth),
+        "potentialPayoutEth": str(prediction.potential_payout_eth),
+        "potentialPayoutToken": str(prediction.potential_payout_eth),
+        "status": prediction.status,
+        "createdAt": prediction.created_at.isoformat(),
     }
 
 
@@ -150,7 +199,7 @@ def _verify_on_chain(payment):
     tx = web3.eth.get_transaction(payment.tx_hash)
 
     if settings.PAYMENT_ASSET == "ERC20":
-        required_units = int(payment.amount_eth * (Decimal(10) ** settings.PAYMENT_TOKEN_DECIMALS))
+        required_units = int(payment.amount_eth * (Decimal(10) ** payment.token_decimals))
     else:
         required_units = web3.to_wei(payment.amount_eth, "ether")
     receiver = Web3.to_checksum_address(payment.receiver_address)
@@ -190,11 +239,11 @@ def _verify_on_chain(payment):
     payment.save(update_fields=["status", "failure_reason", "updated_at"])
     _activity(
         Activity.Event.PAYMENT_FAILED if errors else Activity.Event.PAYMENT_CONFIRMED,
-        f"Payment {payment.status}: {payment.amount_eth} ETH",
+        f"Payment {payment.status}: {payment.amount_eth} {payment.token_symbol}",
         wallet=payment.wallet,
         payment=payment,
         prediction=payment.prediction,
-        metadata={"txHash": payment.tx_hash},
+        metadata={"txHash": payment.tx_hash, "tokenSymbol": payment.token_symbol},
     )
 
 
@@ -208,6 +257,8 @@ def payment_config(_request):
             "tokenAddress": settings.PAYMENT_TOKEN_ADDRESS,
             "tokenSymbol": settings.PAYMENT_TOKEN_SYMBOL,
             "tokenDecimals": settings.PAYMENT_TOKEN_DECIMALS,
+            "defaultTokenSymbol": settings.PAYMENT_TOKEN_SYMBOL,
+            "supportedTokens": _supported_tokens(),
         }
     )
 
@@ -269,8 +320,22 @@ def create_payment(request):
     receiver = settings.PAYMENT_RECEIVER_ADDRESS
     if not _is_address(receiver):
         return _bad_request("Server receiver wallet is not configured.")
-    if settings.PAYMENT_ASSET == "ERC20" and not _is_address(settings.PAYMENT_TOKEN_ADDRESS):
-        return _bad_request("Server ERC20 token contract is not configured.")
+    selected_token = _selected_token(data.get("tokenSymbol"))
+    if settings.PAYMENT_ASSET == "ERC20":
+        if not selected_token:
+            return _bad_request("Unsupported ERC20 token selected.")
+        if not _is_address(selected_token["address"]):
+            return _bad_request("Server ERC20 token contract is not configured.")
+        min_amount = Decimal(str(selected_token.get("minAmount", "0")))
+        if amount_eth < min_amount:
+            return _bad_request(f"Minimum {selected_token['symbol']} bet is {min_amount}.")
+    else:
+        selected_token = {
+            "symbol": "ETH",
+            "address": "",
+            "decimals": 18,
+            "minAmount": "0",
+        }
 
     try:
         odds = Decimal(str(data.get("odds", "1")))
@@ -285,6 +350,9 @@ def create_payment(request):
         wallet=wallet,
         match=data.get("match", "")[:120],
         pick=data.get("pick", "")[:120],
+        token_symbol=selected_token["symbol"],
+        token_address=_checksum(selected_token["address"]) if selected_token["address"] else "",
+        token_decimals=selected_token["decimals"],
         odds=odds,
         stake_eth=amount_eth,
         potential_payout_eth=amount_eth * odds,
@@ -296,17 +364,24 @@ def create_payment(request):
         amount_eth=amount_eth,
         chain_id=settings.CHAIN_ID,
         receiver_address=_checksum(receiver),
+        token_symbol=selected_token["symbol"],
+        token_address=_checksum(selected_token["address"]) if selected_token["address"] else "",
+        token_decimals=selected_token["decimals"],
         match=data.get("match", "")[:120],
         pick=data.get("pick", "")[:120],
         odds=odds,
     )
     _activity(
         Activity.Event.PAYMENT_CREATED,
-        f"Prediction created: {payment.match} {payment.pick} for {payment.amount_eth} ETH",
+        f"Prediction created: {payment.match} {payment.pick} for {payment.amount_eth} {payment.token_symbol}",
         wallet=wallet,
         payment=payment,
         prediction=prediction,
-        metadata={"odds": str(odds), "potentialPayoutEth": str(prediction.potential_payout_eth)},
+        metadata={
+            "odds": str(odds),
+            "tokenSymbol": payment.token_symbol,
+            "potentialPayoutToken": str(prediction.potential_payout_eth),
+        },
     )
     return JsonResponse(_payment_json(payment), status=201)
 
@@ -339,7 +414,7 @@ def submit_payment(request, payment_id):
         wallet=payment.wallet,
         payment=payment,
         prediction=payment.prediction,
-        metadata={"txHash": tx_hash},
+        metadata={"txHash": tx_hash, "tokenSymbol": payment.token_symbol},
     )
 
     try:
@@ -387,20 +462,7 @@ def dashboard(request):
             "paymentCount": payments.count(),
             "predictionCount": predictions.count(),
             "payments": [_payment_json(payment) for payment in payments[:50]],
-            "predictions": [
-                {
-                    "id": prediction.id,
-                    "walletAddress": prediction.wallet.address,
-                    "match": prediction.match,
-                    "pick": prediction.pick,
-                    "odds": str(prediction.odds),
-                    "stakeEth": str(prediction.stake_eth),
-                    "potentialPayoutEth": str(prediction.potential_payout_eth),
-                    "status": prediction.status,
-                    "createdAt": prediction.created_at.isoformat(),
-                }
-                for prediction in predictions[:50]
-            ],
+            "predictions": [_prediction_json(prediction) for prediction in predictions[:50]],
             "activities": [
                 {
                     "id": activity.id,

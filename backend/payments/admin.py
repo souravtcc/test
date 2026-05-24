@@ -6,7 +6,7 @@ from .models import Activity, Payment, Prediction, Wallet
 class PredictionInline(admin.TabularInline):
     model = Prediction
     extra = 0
-    fields = ("match", "pick", "odds", "stake_eth", "potential_payout_eth", "status", "created_at")
+    fields = ("match", "pick", "token_symbol", "odds", "stake_eth", "potential_payout_eth", "status", "created_at")
     readonly_fields = ("created_at",)
     show_change_link = True
 
@@ -14,7 +14,7 @@ class PredictionInline(admin.TabularInline):
 class PaymentInline(admin.TabularInline):
     model = Payment
     extra = 0
-    fields = ("amount_eth", "receiver_address", "tx_hash", "status", "created_at")
+    fields = ("token_symbol", "amount_eth", "receiver_address", "tx_hash", "status", "created_at")
     readonly_fields = ("created_at",)
     show_change_link = True
 
@@ -38,7 +38,7 @@ class WalletAdmin(admin.ModelAdmin):
 
 @admin.register(Prediction)
 class PredictionAdmin(admin.ModelAdmin):
-    list_display = ("id", "wallet_short", "match", "pick", "odds", "stake_eth", "potential_payout_eth", "status", "created_at")
+    list_display = ("id", "wallet_short", "match", "pick", "token_symbol", "odds", "stake_eth", "potential_payout_eth", "status", "created_at")
     list_filter = ("status", "match", "created_at", "updated_at")
     search_fields = ("wallet__address", "match", "pick")
     readonly_fields = ("created_at", "updated_at")
@@ -53,7 +53,7 @@ class PredictionAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ("id", "wallet_short", "amount_eth", "receiver_short", "match", "pick", "odds", "status", "tx_short", "created_at")
+    list_display = ("id", "wallet_short", "token_symbol", "amount_eth", "potential_payout_display", "receiver_short", "match", "pick", "odds", "status", "tx_short", "created_at")
     list_filter = ("status", "chain_id", "match", "created_at", "updated_at")
     search_fields = ("wallet_address", "receiver_address", "tx_hash", "match", "pick")
     readonly_fields = ("created_at", "updated_at")
@@ -69,6 +69,12 @@ class PaymentAdmin(admin.ModelAdmin):
     @admin.display(description="Receiver")
     def receiver_short(self, obj):
         return f"{obj.receiver_address[:6]}...{obj.receiver_address[-4:]}"
+
+    @admin.display(description="Potential payout")
+    def potential_payout_display(self, obj):
+        if not obj.prediction:
+            return "-"
+        return f"{obj.prediction.potential_payout_eth} {obj.token_symbol}"
 
     @admin.display(description="Tx")
     def tx_short(self, obj):

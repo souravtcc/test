@@ -13,6 +13,16 @@ from .models import Activity, Payment, Prediction, Wallet
 WALLET = "0x1111111111111111111111111111111111111111"
 RECEIVER = "0x2222222222222222222222222222222222222222"
 TX_HASH = "0x" + "a" * 64
+WETH_TOKEN = {
+    "symbol": "WETH",
+    "address": "0x3333333333333333333333333333333333333333",
+    "decimals": 18,
+}
+USDT_TOKEN = {
+    "symbol": "USDT",
+    "address": "0x4444444444444444444444444444444444444444",
+    "decimals": 6,
+}
 
 
 class DatabaseUrlTests(TestCase):
@@ -52,9 +62,11 @@ class EnsureAdminCommandTests(TestCase):
     CHAIN_ID=1,
     RPC_URL="",
     PAYMENT_ASSET="ERC20",
-    PAYMENT_TOKEN_ADDRESS="0x3333333333333333333333333333333333333333",
-    PAYMENT_TOKEN_SYMBOL="WETH",
-    PAYMENT_TOKEN_DECIMALS=18,
+    PAYMENT_TOKENS=[WETH_TOKEN, USDT_TOKEN],
+    PAYMENT_TOKENS_BY_SYMBOL={"WETH": WETH_TOKEN, "USDT": USDT_TOKEN},
+    PAYMENT_TOKEN_ADDRESS=WETH_TOKEN["address"],
+    PAYMENT_TOKEN_SYMBOL=WETH_TOKEN["symbol"],
+    PAYMENT_TOKEN_DECIMALS=WETH_TOKEN["decimals"],
 )
 class PaymentApiTests(TestCase):
     def post_json(self, path, payload):
@@ -72,6 +84,7 @@ class PaymentApiTests(TestCase):
         self.assertEqual(response.json()["chainId"], 1)
         self.assertEqual(response.json()["paymentAsset"], "ERC20")
         self.assertEqual(response.json()["tokenSymbol"], "WETH")
+        self.assertEqual(len(response.json()["supportedTokens"]), 2)
 
     def test_markets_returns_world_cup_markets(self):
         response = self.client.get("/api/payments/markets/")
@@ -144,6 +157,7 @@ class PaymentApiTests(TestCase):
             {
                 "walletAddress": WALLET,
                 "amountEth": "0.25",
+                "tokenSymbol": "WETH",
                 "match": "ARG VS FRA",
                 "pick": "ARGENTINA TO WIN",
                 "odds": "2.10",
@@ -156,8 +170,29 @@ class PaymentApiTests(TestCase):
         self.assertEqual(Payment.objects.count(), 1)
         self.assertEqual(response.json()["receiverAddress"], RECEIVER.lower())
         self.assertEqual(response.json()["paymentAsset"], "ERC20")
-        self.assertEqual(response.json()["tokenAddress"], "0x3333333333333333333333333333333333333333")
+        self.assertEqual(response.json()["tokenAddress"], WETH_TOKEN["address"].lower())
+        self.assertEqual(response.json()["tokenSymbol"], "WETH")
         self.assertEqual(response.json()["status"], Payment.Status.CREATED)
+
+    def test_create_payment_can_use_usdt(self):
+        response = self.post_json(
+            "/api/payments/create/",
+            {
+                "walletAddress": WALLET,
+                "amountEth": "25",
+                "tokenSymbol": "USDT",
+                "match": "BRA VS ESP",
+                "pick": "BRAZIL TO WIN",
+                "odds": "3.00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["tokenSymbol"], "USDT")
+        self.assertEqual(response.json()["tokenAddress"], USDT_TOKEN["address"].lower())
+        payment = Payment.objects.get(pk=response.json()["id"])
+        self.assertEqual(payment.token_symbol, "USDT")
+        self.assertEqual(payment.token_decimals, 6)
 
     def test_submit_payment_records_hash_and_keeps_rpc_pending(self):
         created = self.post_json(
@@ -165,6 +200,7 @@ class PaymentApiTests(TestCase):
             {
                 "walletAddress": WALLET,
                 "amountEth": "0.25",
+                "tokenSymbol": "WETH",
                 "match": "ARG VS FRA",
                 "pick": "ARGENTINA TO WIN",
                 "odds": "2.10",
@@ -185,6 +221,7 @@ class PaymentApiTests(TestCase):
             {
                 "walletAddress": WALLET,
                 "amountEth": "0.25",
+                "tokenSymbol": "USDT",
                 "match": "ARG VS FRA",
                 "pick": "ARGENTINA TO WIN",
                 "odds": "2.10",
@@ -198,3 +235,5 @@ class PaymentApiTests(TestCase):
         self.assertEqual(body["walletCount"], 1)
         self.assertEqual(body["paymentCount"], 1)
         self.assertEqual(body["predictionCount"], 1)
+        self.assertEqual(body["payments"][0]["tokenSymbol"], "USDT")
+        self.assertEqual(body["predictions"][0]["tokenSymbol"], "USDT")

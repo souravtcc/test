@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -92,6 +93,51 @@ def postgres_database_from_url(database_url):
     }
 
 
+def _normalize_token_entry(token):
+    symbol = str(token.get("symbol", "")).strip().upper()
+    address = str(token.get("address", "")).strip()
+    decimals = int(token.get("decimals", 18))
+    min_amount = str(token.get("minAmount", token.get("min_amount", "0"))).strip() or "0"
+    if not symbol or not address:
+        raise ValueError("Each payment token needs a symbol and address.")
+    return {
+        "symbol": symbol,
+        "address": address,
+        "decimals": decimals,
+        "minAmount": min_amount,
+    }
+
+
+def _default_payment_tokens(chain_id):
+    default_weth = {
+        "symbol": os.environ.get("PAYMENT_TOKEN_SYMBOL", "WETH").strip().upper() or "WETH",
+        "address": os.environ.get("PAYMENT_TOKEN_ADDRESS", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").strip(),
+        "decimals": int(os.environ.get("PAYMENT_TOKEN_DECIMALS", "18")),
+        "minAmount": os.environ.get("PAYMENT_WETH_MIN_AMOUNT", os.environ.get("PAYMENT_TOKEN_MIN_AMOUNT", "0.001")),
+    }
+    if chain_id == 1:
+        return [
+            default_weth,
+            {
+                "symbol": "USDT",
+                "address": os.environ.get("PAYMENT_USDT_ADDRESS", "0xdAC17F958D2ee523a2206206994597C13D831ec7").strip(),
+                "decimals": int(os.environ.get("PAYMENT_USDT_DECIMALS", "6")),
+                "minAmount": os.environ.get("PAYMENT_USDT_MIN_AMOUNT", "1"),
+            },
+        ]
+    return [default_weth]
+
+
+def load_payment_tokens(chain_id):
+    raw = os.environ.get("PAYMENT_TOKENS_JSON", "").strip()
+    if raw:
+        data = json.loads(raw)
+        if not isinstance(data, list) or not data:
+            raise ValueError("PAYMENT_TOKENS_JSON must be a non-empty JSON array.")
+        return [_normalize_token_entry(item) for item in data]
+    return [_normalize_token_entry(item) for item in _default_payment_tokens(chain_id)]
+
+
 DATABASE_URL = normalize_database_url(os.environ.get("DATABASE_URL", ""))
 
 if DATABASE_URL:
@@ -139,9 +185,11 @@ if CHAIN_ID == 1 and "sepolia.infura.io" in RPC_URL:
     RPC_URL = RPC_URL.replace("sepolia.infura.io", "mainnet.infura.io")
 CONFIRMATION_BLOCKS = int(os.environ.get("CONFIRMATION_BLOCKS", "1"))
 PAYMENT_ASSET = os.environ.get("PAYMENT_ASSET", "ERC20").upper()
-PAYMENT_TOKEN_ADDRESS = os.environ.get("PAYMENT_TOKEN_ADDRESS", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
-PAYMENT_TOKEN_SYMBOL = os.environ.get("PAYMENT_TOKEN_SYMBOL", "WETH")
-PAYMENT_TOKEN_DECIMALS = int(os.environ.get("PAYMENT_TOKEN_DECIMALS", "18"))
+PAYMENT_TOKENS = load_payment_tokens(CHAIN_ID)
+PAYMENT_TOKENS_BY_SYMBOL = {token["symbol"]: token for token in PAYMENT_TOKENS}
+PAYMENT_TOKEN_SYMBOL = PAYMENT_TOKENS[0]["symbol"]
+PAYMENT_TOKEN_ADDRESS = PAYMENT_TOKENS[0]["address"]
+PAYMENT_TOKEN_DECIMALS = PAYMENT_TOKENS[0]["decimals"]
 
 FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY", "")
 FOOTBALL_PROVIDER = os.environ.get("FOOTBALL_PROVIDER", "football-data").lower()
