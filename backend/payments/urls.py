@@ -10,5 +10,6 @@ urlpatterns = [
     path("wallets/connect/", views.connect_wallet),
     path("create/", views.create_payment),
     path("<int:payment_id>/submit/", views.submit_payment),
+    path("<int:payment_id>/cancel/", views.cancel_payment),
     path("<int:payment_id>/", views.payment_detail),
 ]

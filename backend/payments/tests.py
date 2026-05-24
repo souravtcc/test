@@ -215,6 +215,54 @@ class PaymentApiTests(TestCase):
         self.assertEqual(body["status"], Payment.Status.SUBMITTED)
         self.assertIn("pending", body["failureReason"].lower())
 
+    def test_cancel_payment_marks_unsubmitted_payment_failed(self):
+        created = self.post_json(
+            "/api/payments/create/",
+            {
+                "walletAddress": WALLET,
+                "amountEth": "0.25",
+                "tokenSymbol": "WETH",
+                "match": "ARG VS FRA",
+                "pick": "ARGENTINA TO WIN",
+                "odds": "2.10",
+            },
+        ).json()
+
+        response = self.post_json(
+            f"/api/payments/{created['id']}/cancel/",
+            {"reason": "Insufficient ETH for gas."},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], Payment.Status.FAILED)
+        self.assertEqual(body["failureReason"], "Insufficient ETH for gas.")
+        self.assertEqual(Payment.objects.get(pk=created["id"]).status, Payment.Status.FAILED)
+        self.assertEqual(Prediction.objects.get(pk=created["predictionId"]).status, Prediction.Status.CANCELLED)
+        self.assertEqual(Activity.objects.filter(event=Activity.Event.PAYMENT_FAILED).count(), 1)
+
+    def test_cancel_payment_rejects_submitted_payment(self):
+        created = self.post_json(
+            "/api/payments/create/",
+            {
+                "walletAddress": WALLET,
+                "amountEth": "0.25",
+                "tokenSymbol": "WETH",
+                "match": "ARG VS FRA",
+                "pick": "ARGENTINA TO WIN",
+                "odds": "2.10",
+            },
+        ).json()
+        self.post_json(f"/api/payments/{created['id']}/submit/", {"txHash": TX_HASH})
+
+        response = self.post_json(
+            f"/api/payments/{created['id']}/cancel/",
+            {"reason": "User closed wallet."},
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(Payment.objects.get(pk=created["id"]).status, Payment.Status.SUBMITTED)
+
     def test_dashboard_can_filter_by_wallet(self):
         self.post_json(
             "/api/payments/create/",

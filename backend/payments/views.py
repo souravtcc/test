@@ -451,6 +451,41 @@ def submit_payment(request, payment_id):
     return JsonResponse(_payment_json(payment))
 
 
+@csrf_exempt
+def cancel_payment(request, payment_id):
+    if request.method != "POST":
+        return _bad_request("POST required.", 405)
+
+    data = _json_body(request)
+    if data is None:
+        return _bad_request("Invalid JSON.")
+
+    try:
+        payment = Payment.objects.get(pk=payment_id)
+    except Payment.DoesNotExist:
+        return _bad_request("Payment not found.", 404)
+
+    if payment.tx_hash:
+        return _bad_request("Cannot cancel a payment after a transaction hash is recorded.", 409)
+
+    reason = str(data.get("reason") or "Wallet transaction was not completed.")[:500]
+    payment.status = Payment.Status.FAILED
+    payment.failure_reason = reason
+    payment.save(update_fields=["status", "failure_reason", "updated_at"])
+    if payment.prediction:
+        payment.prediction.status = Prediction.Status.CANCELLED
+        payment.prediction.save(update_fields=["status", "updated_at"])
+    _activity(
+        Activity.Event.PAYMENT_FAILED,
+        f"Payment failed before transaction: {payment.amount_eth} {payment.token_symbol}",
+        wallet=payment.wallet,
+        payment=payment,
+        prediction=payment.prediction,
+        metadata={"reason": reason, "tokenSymbol": payment.token_symbol},
+    )
+    return JsonResponse(_payment_json(payment))
+
+
 def payment_detail(_request, payment_id):
     try:
         payment = Payment.objects.get(pk=payment_id)

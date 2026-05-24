@@ -246,6 +246,18 @@ async function api(path, options = {}) {
   return data;
 }
 
+async function estimateGasCostWei(browserProvider, txRequest) {
+  const feeData = await browserProvider.getFeeData();
+  const gasLimit = await browserProvider.estimateGas(txRequest);
+  const gasPrice = feeData.maxFeePerGas || feeData.gasPrice;
+  if (!gasPrice) return 0n;
+  return gasLimit * gasPrice;
+}
+
+function formatEthForMessage(valueWei) {
+  return formatDisplayAmount(ethers.formatEther(valueWei), 6);
+}
+
 async function saveWalletConnection(walletAddress, walletName, chainId) {
   try {
     await api("/payments/wallets/connect/", {
@@ -602,6 +614,7 @@ export default function App() {
   }
 
   async function payNow() {
+    let unsubmittedPayment = null;
     try {
       if (!validBets.length) return;
       setModalMessage("");
@@ -665,26 +678,42 @@ export default function App() {
           }),
         });
         setPayment(created);
+        unsubmittedPayment = created;
 
         setMessage(`Confirm wager ${index + 1} of ${validBets.length} in your wallet.`);
         setModalMessage(`Confirm wager ${index + 1} of ${validBets.length} in your wallet.`);
         const paymentAsset = created.paymentAsset || (selectedToken?.native ? "ETH" : config?.paymentAsset);
         const tokenDecimals = created.tokenDecimals || config?.tokenDecimals || 18;
         const paymentTokenSymbol = created.tokenSymbol || paymentSymbol;
-        const stakeValueWei = ethers.parseEther(bet.amountEth);
-        let nativeTransferGasLimit = 21000n;
+        const stakeUnits = paymentAsset === "ERC20"
+          ? ethers.parseUnits(bet.amountEth, tokenDecimals)
+          : ethers.parseEther(bet.amountEth);
         if (paymentAsset !== "ERC20") {
-          const feeData = await browserProvider.getFeeData();
-          nativeTransferGasLimit = await browserProvider.estimateGas({
+          const nativeTransfer = {
             from: activeAddress,
             to: created.receiverAddress,
-            value: stakeValueWei,
-          }).catch(() => 21000n);
-          const gasPrice = feeData.maxFeePerGas || feeData.gasPrice || 0n;
-          const estimatedGasWei = nativeTransferGasLimit * gasPrice;
-          if (gasBalanceWei < stakeValueWei + estimatedGasWei) {
+            value: stakeUnits,
+          };
+          const estimatedGasWei = await estimateGasCostWei(browserProvider, nativeTransfer).catch(() => 0n);
+          if (gasBalanceWei < stakeUnits + estimatedGasWei) {
             const maxStakeWei = gasBalanceWei > estimatedGasWei ? gasBalanceWei - estimatedGasWei : 0n;
-            throw new Error(`Insufficient ETH for stake plus gas. Try ${formatDisplayAmount(ethers.formatEther(maxStakeWei), 6)} ETH or lower.`);
+            throw new Error(`Insufficient ETH for stake plus gas. Balance ${formatEthForMessage(gasBalanceWei)} ETH, estimated gas ${formatEthForMessage(estimatedGasWei)} ETH. Try ${formatEthForMessage(maxStakeWei)} ETH or lower.`);
+          }
+        } else {
+          const tokenContractForEstimate = new ethers.Contract(
+            created.tokenAddress || config.tokenAddress,
+            ERC20_ABI,
+            signer,
+          );
+          const estimatedGasWei = await estimateGasCostWei(
+            browserProvider,
+            {
+              ...(await tokenContractForEstimate.transfer.populateTransaction(created.receiverAddress, stakeUnits)),
+              from: activeAddress,
+            },
+          ).catch(() => 0n);
+          if (estimatedGasWei > 0n && gasBalanceWei < estimatedGasWei) {
+            throw new Error(`Insufficient ETH for token transfer gas. Balance ${formatEthForMessage(gasBalanceWei)} ETH, estimated gas ${formatEthForMessage(estimatedGasWei)} ETH.`);
           }
         }
         const tx = paymentAsset === "ERC20"
@@ -692,12 +721,12 @@ export default function App() {
             created.tokenAddress || config.tokenAddress,
             ERC20_ABI,
             signer,
-          ).transfer(created.receiverAddress, ethers.parseUnits(bet.amountEth, tokenDecimals))
+          ).transfer(created.receiverAddress, stakeUnits)
           : await signer.sendTransaction({
             to: created.receiverAddress,
-            value: stakeValueWei,
-            gasLimit: nativeTransferGasLimit,
+            value: stakeUnits,
           });
+        unsubmittedPayment = null;
         await refreshWalletBalances(activeAddress, providerForTx);
 
         setStatus("submitted");
@@ -729,6 +758,17 @@ export default function App() {
       const errorMessage = error.shortMessage || error.message;
       setMessage(errorMessage);
       setModalMessage(errorMessage);
+      if (unsubmittedPayment?.id) {
+        try {
+          const cancelled = await api(`/payments/${unsubmittedPayment.id}/cancel/`, {
+            method: "POST",
+            body: JSON.stringify({ reason: errorMessage }),
+          });
+          setPayment(cancelled);
+        } catch {
+          // Keep the wallet-facing error visible even if cleanup fails.
+        }
+      }
     }
   }
 
