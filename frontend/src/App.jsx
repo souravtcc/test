@@ -12,6 +12,12 @@ const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
   "function transfer(address to, uint256 amount) returns (bool)",
 ];
+const MAINNET_USDT_TOKEN = {
+  symbol: "USDT",
+  address: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+  decimals: 6,
+  minAmount: "1",
+};
 
 const fallbackMarkets = [
   {
@@ -213,6 +219,23 @@ function walletOpenLinks() {
   };
 }
 
+function chainAddParams(chainId) {
+  const chains = {
+    1: {
+      chainName: "Ethereum Mainnet",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: ["https://ethereum-rpc.publicnode.com"],
+      blockExplorerUrls: ["https://etherscan.io"],
+    },
+  };
+  const chain = chains[Number(chainId)];
+  if (!chain) return null;
+  return {
+    chainId: `0x${Number(chainId).toString(16)}`,
+    ...chain,
+  };
+}
+
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -261,7 +284,12 @@ export default function App() {
 
   const ethereum = typeof window !== "undefined" ? window.ethereum : null;
   const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
-  const supportedTokens = config?.supportedTokens || [];
+  const supportedTokens = useMemo(() => {
+    const tokens = config?.supportedTokens || [];
+    if (Number(config?.chainId || 1) !== 1) return tokens;
+    if (tokens.some((token) => token.symbol === "USDT")) return tokens;
+    return [...tokens, MAINNET_USDT_TOKEN];
+  }, [config]);
   const paymentOptions = useMemo(() => {
     if (!config) return [];
     const ethOption = { symbol: "ETH", address: "", decimals: 18, minAmount: "0", native: true };
@@ -530,10 +558,27 @@ export default function App() {
     if (!config || !provider?.request) return;
     const current = Number(await provider.request({ method: "eth_chainId" }));
     if (current === config.chainId) return;
-    await provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: `0x${Number(config.chainId).toString(16)}` }],
-    });
+    const chainIdHex = `0x${Number(config.chainId).toString(16)}`;
+    try {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: chainIdHex }],
+      });
+    } catch (error) {
+      const rawMessage = error?.shortMessage || error?.message || "";
+      const needsAdd = error?.code === 4902 || /unrecognized chain|addEthereumChain|not added|unknown chain/i.test(rawMessage);
+      const addParams = chainAddParams(config.chainId);
+      if (!needsAdd || !addParams) throw error;
+      setMessage(`Adding ${addParams.chainName} to your wallet...`);
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [addParams],
+      });
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: chainIdHex }],
+      });
+    }
   }
 
   function addBet(market, odd) {

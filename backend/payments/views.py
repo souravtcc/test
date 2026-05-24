@@ -68,7 +68,17 @@ def _selected_token(symbol=None):
             "decimals": 18,
             "minAmount": "0",
         }
-    return settings.PAYMENT_TOKENS_BY_SYMBOL.get(token_symbol)
+    configured_token = settings.PAYMENT_TOKENS_BY_SYMBOL.get(token_symbol)
+    if configured_token:
+        return configured_token
+    if token_symbol == "USDT" and settings.CHAIN_ID == 1:
+        return {
+            "symbol": "USDT",
+            "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            "decimals": 6,
+            "minAmount": "1",
+        }
+    return None
 
 
 def _payment_token(payment):
