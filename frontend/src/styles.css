@@ -69,8 +69,7 @@ nav {
   background: rgba(8,10,13,0.97);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 100;
   min-height: 64px;
   display: flex;

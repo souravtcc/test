@@ -845,8 +845,8 @@ export default function App() {
             </button>
             {walletAddress && <div className="balance-pill"><span>{paymentSymbol}</span><span className="val">{selectedTokenBalance || formatDisplayAmount(0, tokenBalanceDecimals)} {paymentSymbol}</span></div>}
             {walletAddress && <div className="balance-pill"><span>GAS</span><span className="val">{walletNativeBalance || formatDisplayAmount(0)} ETH</span></div>}
-            <button className="wallet-btn trust" onClick={() => connectInjectedWallet("trust")}>TRUST</button>
-            <button className="wallet-btn qr" onClick={connectWalletConnect}>QR</button>
+            {!walletAddress && <button className="wallet-btn trust" onClick={() => connectInjectedWallet("trust")}>TRUST</button>}
+            {!walletAddress && <button className="wallet-btn qr" onClick={connectWalletConnect}>QR</button>}
           </div>
         </div>
       </nav>
