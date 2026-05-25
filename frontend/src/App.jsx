@@ -195,6 +195,21 @@ function tokenMinAmount(token) {
   return Number.isFinite(minAmount) ? minAmount : 0;
 }
 
+function dashboardRowToBet(row) {
+  const stake = Number(row.amountToken || row.amountEth || row.stakeToken || row.stakeEth || row.stake || 0);
+  const odds = Number(row.odds || 0);
+  return {
+    match: row.match,
+    pick: row.pick,
+    odds,
+    stake,
+    symbol: row.tokenSymbol || row.symbol || "ETH",
+    potentialPayout: Number(row.potentialPayoutToken || row.potentialPayoutEth || row.potentialPayout || stake * odds),
+    status: String(row.status || "ACTIVE").toUpperCase(),
+    txHash: row.txHash || "",
+  };
+}
+
 function decimalPlaces(value) {
   const [, decimals = ""] = String(value || "").split(".");
   return decimals.length;
@@ -442,6 +457,19 @@ export default function App() {
     if (!walletAddress || !activeProvider) return;
     refreshWalletBalances(walletAddress, activeProvider);
   }, [activeProvider, selectedTokenSymbol, walletAddress]);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      setMyBets([]);
+      return;
+    }
+    api(`/payments/dashboard/?walletAddress=${encodeURIComponent(walletAddress)}`)
+      .then((data) => {
+        const rows = Array.isArray(data.payments) && data.payments.length ? data.payments : data.predictions || [];
+        setMyBets(rows.map(dashboardRowToBet));
+      })
+      .catch(() => {});
+  }, [walletAddress]);
 
   function showToast(text) {
     setToast(text);
@@ -806,7 +834,7 @@ export default function App() {
           <div className="logo">FWC26 <span className="slash">/</span> <span>DAPP</span></div>
           <div className="nav-tabs">
             <button className={tab === "markets" ? "active" : ""} onClick={() => setTab("markets")}>LIVE MARKETS</button>
-            <button className={tab === "mybets" ? "active" : ""} onClick={() => setTab("mybets")}>MY BETS <span>({myBets.length})</span></button>
+            <button className={tab === "mybets" ? "active" : ""} onClick={() => setTab("mybets")}>MY BETS <span>({bets.length + myBets.length})</span></button>
             <button className={tab === "leaderboard" ? "active" : ""} onClick={() => setTab("leaderboard")}>LEADERBOARD</button>
           </div>
           <div className="nav-right">
@@ -858,7 +886,7 @@ export default function App() {
               renderInlineBetSlip={() => <BetSlip {...betSlipProps} />}
             />
           )}
-          {tab === "mybets" && <MyBets myBets={myBets} />}
+          {tab === "mybets" && <MyBets activeBets={bets} myBets={myBets} paymentSymbol={paymentSymbol} />}
           {tab === "leaderboard" && <Leaderboard />}
         </main>
         <aside className="sidebar">
@@ -1023,8 +1051,25 @@ function BetSlip({
   return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div><div className="token-switcher"><div className="token-switcher-label">PAY WITH</div><div className="token-switcher-options">{supportedTokens.map((token) => <button key={token.symbol} className={`token-chip ${selectedTokenSymbol === token.symbol ? "active" : ""}`} onClick={() => setSelectedTokenSymbol(token.symbol)}><span>{token.symbol}</span><strong>{walletTokenBalances[token.symbol] || formatDisplayAmount(0, tokenDisplayDecimals(token))}</strong></button>)}</div><div className="token-switcher-copy">Min {selectedTokenMinAmount || "> 0"} {paymentSymbol}. Receiver {receiverAddress ? shorten(receiverAddress) : "wallet"} gets {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.</div></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">{stakePrefix}</div><input className="stake-input" type="number" min={selectedTokenMinAmount || 0} step={selectedTokenMinAmount || 0.001} placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
 }
 
-function MyBets({ myBets }) {
-  return <div><div className="section-header"><div className="section-title">MY BETS</div></div><div className="side-panel static-panel"><div className="side-panel-header"><span className="title">ACTIVE POSITIONS</span><span className="count">{myBets.length}</span></div>{!myBets.length ? <div className="empty-table">NO ACTIVE BETS. GO PLACE SOME PREDICTIONS.</div> : myBets.map((bet, i) => <div className="my-bet-row" key={`${bet.match}-${i}`}><div className="my-bet-info"><div className="my-bet-match">{bet.match}</div><div className="my-bet-pick">{bet.pick} · {bet.odds}X</div></div><div className="my-bet-right"><div className="my-bet-stake">{Number(bet.stake).toFixed(3)} {bet.symbol || "ETH"}</div><div className="my-bet-payout">WIN PAYOUT {formatDisplayAmount(bet.potentialPayout || Number(bet.stake) * bet.odds, 3)} {bet.symbol || "ETH"}</div><div className="status-badge pending">{bet.status}</div></div></div>)}</div></div>;
+function MyBets({ activeBets, myBets, paymentSymbol }) {
+  const slipBets = activeBets.map((bet) => ({
+    ...bet,
+    symbol: paymentSymbol,
+    status: "IN SLIP",
+    potentialPayout: Number(bet.stake || 0) * bet.odds,
+  }));
+  const renderRows = (rows, emptyText) => !rows.length
+    ? <div className="empty-table">{emptyText}</div>
+    : rows.map((bet, i) => <BetHistoryRow bet={bet} key={`${bet.match}-${bet.pick}-${i}`} />);
+
+  return <div><div className="section-header"><div className="section-title">MY BETS</div></div><div className="my-bets-stack"><div className="side-panel static-panel"><div className="side-panel-header"><span className="title">ACTIVE BETS</span><span className="count">{slipBets.length}</span></div>{renderRows(slipBets, "NO ACTIVE BETS IN YOUR SLIP.")}</div><div className="side-panel static-panel"><div className="side-panel-header"><span className="title">PAST BETS</span><span className="count">{myBets.length}</span></div>{renderRows(myBets, "NO PAST BETS FOUND FOR THIS WALLET.")}</div></div></div>;
+}
+
+function BetHistoryRow({ bet }) {
+  const stake = Number(bet.stake || 0);
+  const odds = Number(bet.odds || 0);
+  const symbol = bet.symbol || "ETH";
+  return <div className="my-bet-row"><div className="my-bet-info"><div className="my-bet-match">{bet.match}</div><div className="my-bet-pick">{bet.pick} · {odds}X</div></div><div className="my-bet-right"><div className="my-bet-stake">{stake.toFixed(3)} {symbol}</div><div className="my-bet-payout">WIN PAYOUT {formatDisplayAmount(bet.potentialPayout || stake * odds, 3)} {symbol}</div><div className="status-badge pending">{bet.status}</div></div></div>;
 }
 
 function Leaderboard() {
