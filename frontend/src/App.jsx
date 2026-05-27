@@ -815,7 +815,6 @@ export default function App() {
     totalPayout,
     totalStake,
     paymentSymbol,
-    receiverAddress: config?.receiverAddress || "",
     supportedTokens: paymentOptions,
     selectedTokenSymbol,
     setSelectedTokenSymbol,
@@ -938,7 +937,7 @@ export default function App() {
                 <div style={{ textAlign: "right" }}><div className="modal-payout-label">TOTAL STAKE</div><div className="gas-est">{totalStake.toFixed(4)} {paymentSymbol}</div></div>
               </div>
               <div className="modal-helper-copy">
-                Minimum {paymentSymbol} bet is {selectedTokenMinAmount || "greater than 0"}. Receiver {config?.receiverAddress ? shorten(config.receiverAddress) : "wallet"} will receive {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.
+                Minimum {paymentSymbol} bet is {selectedTokenMinAmount || "greater than 0"}. Total stake is {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.
               </div>
               {(modalMessage || modalBlockingMessage) && (
                 <div className={`modal-status ${modalMessage && status === "failed" ? "error" : ""}`}>
@@ -1047,7 +1046,6 @@ function BetSlip({
   totalPayout,
   totalStake,
   paymentSymbol,
-  receiverAddress,
   supportedTokens,
   selectedTokenSymbol,
   setSelectedTokenSymbol,
@@ -1059,7 +1057,7 @@ function BetSlip({
   clearSlip,
   openConfirm,
 }) {
-  return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div><div className="token-switcher"><div className="token-switcher-label">PAY WITH</div><div className="token-switcher-options">{supportedTokens.map((token) => <button key={token.symbol} className={`token-chip ${selectedTokenSymbol === token.symbol ? "active" : ""}`} onClick={() => setSelectedTokenSymbol(token.symbol)}><span>{token.symbol}</span><strong>{walletTokenBalances[token.symbol] || formatDisplayAmount(0, tokenDisplayDecimals(token))}</strong></button>)}</div><div className="token-switcher-copy">Min {selectedTokenMinAmount || "> 0"} {paymentSymbol}. Receiver {receiverAddress ? shorten(receiverAddress) : "wallet"} gets {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.</div></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">{stakePrefix}</div><input className="stake-input" type="number" min={selectedTokenMinAmount || 0} step={selectedTokenMinAmount || 0.001} placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
+  return <div className="side-panel"><div className="side-panel-header"><span className="title">BET SLIP <span className="count">{bets.length}</span></span><button className="clear-btn" onClick={clearSlip}>CLEAR ALL</button></div><div className="token-switcher"><div className="token-switcher-label">PAY WITH</div><div className="token-switcher-options">{supportedTokens.map((token) => <button key={token.symbol} className={`token-chip ${selectedTokenSymbol === token.symbol ? "active" : ""}`} onClick={() => setSelectedTokenSymbol(token.symbol)}><span>{token.symbol}</span><strong>{walletTokenBalances[token.symbol] || formatDisplayAmount(0, tokenDisplayDecimals(token))}</strong></button>)}</div><div className="token-switcher-copy">Min {selectedTokenMinAmount || "> 0"} {paymentSymbol}. Total stake {totalStake.toFixed(4)} {paymentSymbol}. If this bet wins, payout due is {totalPayout.toFixed(4)} {paymentSymbol}.</div></div>{!bets.length ? <div className="betslip-empty"><div className="icon">🎯</div>SELECT ODDS FROM A MATCH<br />TO BUILD YOUR BET SLIP</div> : <><div>{bets.map((bet, i) => <div className="bet-item" key={`${bet.match}-${bet.pick}`}><div className="bet-item-top"><div className="bet-selection"><span className="match-name">{bet.match}</span><span className="pick">{bet.pick}</span></div><div className="bet-actions"><div className="bet-odds-badge">{bet.odds}X</div><button className="remove-bet" onClick={() => removeBet(i)}>✕</button></div></div><div className="stake-input-wrap"><div className="stake-prefix">{stakePrefix}</div><input className="stake-input" type="number" min={selectedTokenMinAmount || 0} step={selectedTokenMinAmount || 0.001} placeholder="0.00" value={bet.stake} onChange={(event) => updateStake(i, event.target.value)} /><button className="stake-max" onClick={() => updateStake(i, "1.00")}>MAX</button></div></div>)}</div><div className="betslip-footer"><div className="payout-row"><span className="payout-label">POTENTIAL PAYOUT</span><span className="payout-val">{totalPayout.toFixed(4)} {paymentSymbol}</span></div><button className="place-btn" onClick={openConfirm}><span>⚡ PLACE ALL BETS</span></button></div></>}</div>;
 }
 
 function MyBets({ activeBets, myBets, paymentSymbol }) {
