@@ -1013,7 +1013,7 @@ function LiveMarkets({ markets, source, loading, bets, onAddBet, inlineBetSlipMa
     return true;
   });
   const title = filter === "upcoming" ? "UPCOMING MARKETS" : filter === "today" ? "TODAY'S MARKETS" : "LIVE MARKETS";
-  const badge = source === "fallback" ? "UPDATED DYNAMICALLY" : "REAL";
+  const badge = source === "fallback" ? "UPDATED DYNAMICALLY" : "UPDATED DYNAMICALLY";
 
   return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>{title} <span className="badge">{loading ? "LOADING" : badge}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div>{loading ? <div className="empty-table">LOADING LIVE MARKETS...</div> : shownMarkets.length ? <div className="matches-grid">{shownMarkets.map((market) => <React.Fragment key={`${market.match}-${market.matchNo}`}><MatchCard market={market} bets={bets} onAddBet={onAddBet} />{inlineBetSlipMatch === market.match && <div className="mobile-betslip-slot" data-betslip-match={market.match}>{renderInlineBetSlip()}</div>}</React.Fragment>)}</div> : <div className="empty-table">NO {filter.toUpperCase()} MATCHES AVAILABLE YET.</div>}</div>;
 }
