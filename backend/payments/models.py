@@ -20,6 +20,13 @@ class Prediction(models.Model):
         LOST = "lost", "Lost"
         CANCELLED = "cancelled", "Cancelled"
 
+    class PayoutStatus(models.TextChoices):
+        NOT_ELIGIBLE = "not_eligible", "Not eligible"
+        PENDING = "pending", "Pending payout"
+        PROCESSING = "processing", "Payout processing"
+        PAID = "paid", "Paid"
+        HOLD = "hold", "On hold"
+
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name="predictions")
     match = models.CharField(max_length=120)
     pick = models.CharField(max_length=120)
@@ -30,6 +37,11 @@ class Prediction(models.Model):
     stake_eth = models.DecimalField(max_digits=24, decimal_places=18)
     potential_payout_eth = models.DecimalField(max_digits=24, decimal_places=18)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    payout_status = models.CharField(max_length=20, choices=PayoutStatus.choices, default=PayoutStatus.NOT_ELIGIBLE)
+    payout_tx_hash = models.CharField(max_length=90, blank=True, db_index=True)
+    payout_amount_eth = models.DecimalField(max_digits=24, decimal_places=18, null=True, blank=True)
+    payout_marked_at = models.DateTimeField(null=True, blank=True)
+    payout_note = models.CharField(max_length=240, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
