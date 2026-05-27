@@ -198,6 +198,8 @@ FOOTBALL_API_TIMEOUT = int(os.environ.get("FOOTBALL_API_TIMEOUT", "8"))
 FOOTBALL_DATA_BASE = os.environ.get("FOOTBALL_DATA_BASE", "https://api.football-data.org/v4")
 FOOTBALL_DATA_COMPETITION = os.environ.get("FOOTBALL_DATA_COMPETITION", "WC")
 
+RECEIVER_DASHBOARD_PASSWORD = os.environ.get("RECEIVER_DASHBOARD_PASSWORD", "")
+
 
 class CorsMiddleware:
     def __init__(self, get_response):
