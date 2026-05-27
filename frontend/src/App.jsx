@@ -303,8 +303,9 @@ export default function App() {
   const [myBets, setMyBets] = useState([]);
   const [walletLinksOpen, setWalletLinksOpen] = useState(false);
   const [preferredMobileWallet, setPreferredMobileWallet] = useState("metamask");
-  const [marketList, setMarketList] = useState(fallbackMarkets);
-  const [marketSource, setMarketSource] = useState("fallback");
+  const [marketList, setMarketList] = useState([]);
+  const [marketSource, setMarketSource] = useState("loading");
+  const [marketsLoading, setMarketsLoading] = useState(true);
   const [selectedTokenSymbol, setSelectedTokenSymbol] = useState("");
   const [discoveredWalletProviders, setDiscoveredWalletProviders] = useState([]);
   const [inlineBetSlipMatch, setInlineBetSlipMatch] = useState("");
@@ -387,14 +388,23 @@ export default function App() {
   }, [config, paymentOptions, selectedTokenSymbol]);
 
   useEffect(() => {
+    setMarketsLoading(true);
     api("/payments/markets/")
       .then((data) => {
         if (Array.isArray(data.markets) && data.markets.length) {
           setMarketList(data.markets);
           setMarketSource(data.source || "api");
+          return;
         }
+        setMarketList(fallbackMarkets);
+        setMarketSource("fallback");
       })
-      .catch((error) => setMessage(`Football API unavailable: ${error.message}`));
+      .catch((error) => {
+        setMarketList(fallbackMarkets);
+        setMarketSource("fallback");
+        setMessage(`Football API unavailable: ${error.message}`);
+      })
+      .finally(() => setMarketsLoading(false));
   }, []);
 
   useEffect(() => {
@@ -880,6 +890,7 @@ export default function App() {
             <LiveMarkets
               markets={marketList}
               source={marketSource}
+              loading={marketsLoading}
               bets={bets}
               onAddBet={addBet}
               inlineBetSlipMatch={inlineBetSlipMatch}
@@ -994,7 +1005,7 @@ function marketIsUpcoming(market) {
   return date.getTime() >= Date.now() && !["FT", "AET", "PEN", "FINISHED"].includes(status);
 }
 
-function LiveMarkets({ markets, source, bets, onAddBet, inlineBetSlipMatch, renderInlineBetSlip }) {
+function LiveMarkets({ markets, source, loading, bets, onAddBet, inlineBetSlipMatch, renderInlineBetSlip }) {
   const [filter, setFilter] = useState("all");
   const shownMarkets = markets.filter((market) => {
     if (filter === "today") return marketIsToday(market);
@@ -1002,9 +1013,9 @@ function LiveMarkets({ markets, source, bets, onAddBet, inlineBetSlipMatch, rend
     return true;
   });
   const title = filter === "upcoming" ? "UPCOMING MARKETS" : filter === "today" ? "TODAY'S MARKETS" : "LIVE MARKETS";
-  const badge = source === "fallback" ? "DEMO" : "REAL";
+  const badge = source === "fallback" ? "UPDATED DYNAMICALLY" : "REAL";
 
-  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>{title} <span className="badge">{badge}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div>{shownMarkets.length ? <div className="matches-grid">{shownMarkets.map((market) => <React.Fragment key={`${market.match}-${market.matchNo}`}><MatchCard market={market} bets={bets} onAddBet={onAddBet} />{inlineBetSlipMatch === market.match && <div className="mobile-betslip-slot" data-betslip-match={market.match}>{renderInlineBetSlip()}</div>}</React.Fragment>)}</div> : <div className="empty-table">NO {filter.toUpperCase()} MATCHES AVAILABLE YET.</div>}</div>;
+  return <div><div className="section-header"><div className="section-title"><div className="live-dot"></div>{title} <span className="badge">{loading ? "LOADING" : badge}</span></div><div className="filter-tabs"><button className={`filter-tab ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>ALL</button><button className={`filter-tab ${filter === "today" ? "active" : ""}`} onClick={() => setFilter("today")}>TODAY</button><button className={`filter-tab ${filter === "upcoming" ? "active" : ""}`} onClick={() => setFilter("upcoming")}>UPCOMING</button></div></div>{loading ? <div className="empty-table">LOADING LIVE MARKETS...</div> : shownMarkets.length ? <div className="matches-grid">{shownMarkets.map((market) => <React.Fragment key={`${market.match}-${market.matchNo}`}><MatchCard market={market} bets={bets} onAddBet={onAddBet} />{inlineBetSlipMatch === market.match && <div className="mobile-betslip-slot" data-betslip-match={market.match}>{renderInlineBetSlip()}</div>}</React.Fragment>)}</div> : <div className="empty-table">NO {filter.toUpperCase()} MATCHES AVAILABLE YET.</div>}</div>;
 }
 
 function Markets({ bets, onAddBet }) {
