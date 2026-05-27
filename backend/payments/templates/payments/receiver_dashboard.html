@@ -17,7 +17,8 @@
     .card { background: var(--panel); border: 1px solid var(--line); padding: 16px; }
     .card span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
     .card strong { font-size: 28px; }
-    .toolbar { background: var(--panel); border: 1px solid var(--line); padding: 14px; display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 18px; }
+    .toolbar { background: var(--panel); border: 1px solid var(--line); padding: 14px; margin-bottom: 18px; }
+    .toolbar form { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
     label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
     select, input { border: 1px solid var(--line); background: #fff; color: var(--text); padding: 9px 10px; min-height: 38px; }
     button, .btn { border: 1px solid var(--accent); background: var(--accent); color: #fff; padding: 10px 12px; min-height: 38px; text-decoration: none; cursor: pointer; font-weight: 700; font-size: 13px; }
@@ -42,9 +43,47 @@
     @media (max-width: 820px) {
       main { padding: 12px; }
       .cards { grid-template-columns: repeat(2, 1fr); }
-      .toolbar { align-items: stretch; }
-      .toolbar > form { width: 100%; }
+      .toolbar form { align-items: stretch; display: grid; grid-template-columns: 1fr; }
+      .toolbar select, .toolbar input, .toolbar button, .toolbar .btn { width: 100%; }
       .row-form { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 680px) {
+      header { padding: 16px; align-items: flex-start; }
+      h1 { font-size: 19px; }
+      .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .card { padding: 12px; }
+      .card strong { font-size: 22px; }
+      .table-wrap { overflow: visible; background: transparent; border: 0; }
+      table, thead, tbody, tr, td { display: block; width: 100%; }
+      table { min-width: 0; border-collapse: separate; }
+      thead { display: none; }
+      tr {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        margin-bottom: 12px;
+        padding: 8px 10px;
+      }
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 10px 0;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      td:last-child { border-bottom: 0; }
+      td::before {
+        content: attr(data-label);
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .04em;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+      }
+      .empty { background: var(--panel); border: 1px solid var(--line); }
+      .empty::before { display: none; }
+      .row-form { gap: 8px; }
+      .row-form button { width: 100%; }
     }
   </style>
 </head>
@@ -100,15 +139,15 @@
           {% for row in rows %}
             {% with prediction=row.prediction payment=row.payment %}
               <tr>
-                <td class="mono">#{{ prediction.id }}</td>
-                <td class="mono">{{ prediction.wallet.address }}</td>
-                <td>
+                <td class="mono" data-label="ID">#{{ prediction.id }}</td>
+                <td class="mono" data-label="Wallet">{{ prediction.wallet.address }}</td>
+                <td data-label="Match / Pick">
                   <strong>{{ prediction.match }}</strong><br>
                   <span class="muted">{{ prediction.pick }} at {{ prediction.odds }}x</span>
                 </td>
-                <td>{{ prediction.stake_eth }} {{ prediction.token_symbol }}</td>
-                <td><strong>{{ prediction.potential_payout_eth }} {{ prediction.token_symbol }}</strong></td>
-                <td class="mono">
+                <td data-label="Stake">{{ prediction.stake_eth }} {{ prediction.token_symbol }}</td>
+                <td data-label="Potential Payout"><strong>{{ prediction.potential_payout_eth }} {{ prediction.token_symbol }}</strong></td>
+                <td class="mono" data-label="Payment Tx">
                   {% if payment and payment.tx_hash %}
                     {{ payment.tx_hash }}
                     <br><span class="muted">{{ payment.status }}</span>
@@ -116,13 +155,13 @@
                     <span class="muted">No tx yet</span>
                   {% endif %}
                 </td>
-                <td>
+                <td data-label="Payout">
                   <span class="status {{ prediction.payout_status }}">{{ prediction.get_payout_status_display }}</span><br>
                   {% if prediction.payout_tx_hash %}<span class="mono">{{ prediction.payout_tx_hash }}</span><br>{% endif %}
                   {% if prediction.payout_amount_eth %}<span>{{ prediction.payout_amount_eth }} {{ prediction.token_symbol }}</span><br>{% endif %}
                   {% if prediction.payout_note %}<span class="muted">{{ prediction.payout_note }}</span>{% endif %}
                 </td>
-                <td>
+                <td data-label="Update Tracking">
                   <form class="row-form" method="post">
                     {% csrf_token %}
                     <input type="hidden" name="prediction_id" value="{{ prediction.id }}">
@@ -141,7 +180,7 @@
               </tr>
             {% endwith %}
           {% empty %}
-            <tr><td class="empty" colspan="8">No records found for this filter.</td></tr>
+            <tr><td class="empty" colspan="8" data-label="">No records found for this filter.</td></tr>
           {% endfor %}
         </tbody>
       </table>
